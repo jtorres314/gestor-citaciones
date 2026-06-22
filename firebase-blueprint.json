@@ -1,0 +1,40 @@
+{
+  "entities": {
+    "Citacion": {
+      "title": "Citación Judicial",
+      "description": "Datos de una citación para entrevista judicial.",
+      "type": "object",
+      "properties": {
+        "nombre": { "type": "string", "description": "Nombre completo del citado" },
+        "genero": { "type": "string", "enum": ["Femenino", "Masculino"], "description": "Género del citado" },
+        "orden": { "type": "string", "description": "Número de orden a la policía judicial" },
+        "fiscal": { "type": "string", "description": "Despacho fiscal (ej: 17 Local)" },
+        "unidad": { "type": "string", "description": "Unidad de la fiscalía (ej: Hurtos de la Ciudad de Cartagena)" },
+        "fecha": { "type": "string", "format": "date", "description": "Fecha de la citación (YYYY-MM-DD)" },
+        "hora": { "type": "string", "description": "Hora de la citación (HH:mm)" },
+        "creadoEl": { "type": "string", "description": "Fecha de creación legible" },
+        "creadoTimestamp": { "type": "number", "description": "Timestamp de creación para ordenamiento" }
+      },
+      "required": ["nombre", "orden", "fecha", "hora", "creadoTimestamp"]
+    },
+    "User": {
+      "title": "Perfil de Usuario",
+      "description": "Metadatos del investigador autenticado.",
+      "type": "object",
+      "properties": {
+        "lastSeen": { "type": "string", "format": "date-time", "description": "Última vez que el usuario ingresó" },
+        "email": { "type": "string", "description": "Correo del usuario o 'anonymous'" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Información de registro del investigador."
+    },
+    "/artifacts/citaciones-judiciales-app/users/{userId}/historial/{citationId}": {
+      "schema": "Citacion",
+      "description": "Historial de citaciones creadas por el investigador."
+    }
+  }
+}

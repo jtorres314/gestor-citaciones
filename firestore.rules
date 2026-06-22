@@ -1,0 +1,53 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper Primitives
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+
+    // Validation Helper
+    function isValidCitacion(data) {
+      return data.keys().hasAll(['nombre', 'orden', 'fecha', 'hora', 'creadoTimestamp']) &&
+             data.nombre is string && data.nombre.size() > 0 && data.nombre.size() <= 200 &&
+             data.genero in ['Femenino', 'Masculino'] &&
+             data.orden is string && data.orden.size() > 0 && data.orden.size() <= 100 &&
+             data.fiscal is string && data.fiscal.size() <= 100 &&
+             data.unidad is string && data.unidad.size() <= 200 &&
+             data.fecha is string && data.fecha.matches('^\\d{4}-\\d{2}-\\d{2}$') &&
+             data.hora is string && data.hora.size() <= 10 &&
+             data.creadoTimestamp is number &&
+             (data.get('estado', 'pendiente') in ['pendiente', 'citado']) &&
+             (data.get('asistencia', null) == null || data.asistencia in ['asistio', 'no_asistio']);
+    }
+
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // User Profile block
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create, update: if isOwner(userId);
+    }
+
+    // Historial match block
+    match /artifacts/citaciones-judiciales-app/users/{userId}/historial/{citationId} {
+      allow list: if isOwner(userId);
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidId(citationId) && isValidCitacion(incoming());
+      allow update: if isOwner(userId) && isValidCitacion(incoming()) && 
+                    (
+                      // Option 1: Update metadata (nombre, fecha, etc)
+                      incoming().diff(resource.data).affectedKeys().hasOnly(['nombre', 'genero', 'orden', 'fiscal', 'unidad', 'fecha', 'hora']) ||
+                      // Option 2: Change status to 'citado'
+                      incoming().diff(resource.data).affectedKeys().hasOnly(['estado']) ||
+                      // Option 3: Mark attendance
+                      incoming().diff(resource.data).affectedKeys().hasOnly(['asistencia'])
+                    );
+      allow delete: if isOwner(userId);
+    }
+  }
+}
