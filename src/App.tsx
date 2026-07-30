@@ -5,11 +5,11 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Copy, User, Calendar, ClipboardList, FileText, Building2, 
+  Copy, User, Calendar, ClipboardList, FileText, FileCheck, FileX, Building2, 
   Trash2, Plus, Sparkles, 
   Wand2, BrainCircuit, Loader2, FileUp, X, Check,
   History, Search, ArrowLeft, LogOut, Eye, ArrowUpDown,
-  UserCheck, UserX, UserMinus, CheckCircle
+  UserCheck, UserX, UserMinus, CheckCircle, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -464,10 +464,24 @@ const App = () => {
       const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'historial', id);
       await updateDoc(docRef, { asistencia: valor });
       
-      // Optimistic update for Citados
+      // Optimistic update for Citados and Historial
       setCitados(prev => prev.map(c => c.id === id ? { ...c, asistencia: valor } : c));
+      setHistorial(prev => prev.map(h => h.id === id ? { ...h, asistencia: valor } : h));
     } catch (err) {
       console.error("Error al marcar asistencia:", err);
+    }
+  };
+
+  const marcarInforme = async (id: string, valor: 'si' | 'no' | null) => {
+    if (!user) return;
+    try {
+      const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'historial', id);
+      await updateDoc(docRef, { informe: valor });
+      
+      // Optimistic update
+      setHistorial(prev => prev.map(h => h.id === id ? { ...h, informe: valor } : h));
+    } catch (err) {
+      console.error("Error al marcar informe:", err);
     }
   };
 
@@ -775,13 +789,15 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                 <div className="col-span-3">PARTICIPANTE</div>
                 <div className="col-span-2">ORDEN OPJ</div>
                 <div 
-                  className="col-span-5 flex items-center gap-1 cursor-pointer hover:text-fgn-blue transition-colors group"
+                  className="col-span-2 flex items-center gap-1 cursor-pointer hover:text-fgn-blue transition-colors group"
                   onClick={toggleSort}
                 >
                   FECHA Y HORA 
                   <ArrowUpDown size={12} className={sortConfig.direction === 'asc' ? 'text-fgn-blue' : 'text-slate-300'} />
                 </div>
-                <div className="col-span-2 text-right">ACCIONES</div>
+                <div className="col-span-2 text-center">INFORME</div>
+                <div className="col-span-2 text-center">ASISTENCIA</div>
+                <div className="col-span-1 text-right">ACC.</div>
               </div>
 
               {historial.length === 0 ? (
@@ -803,11 +819,43 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                       <div className="col-span-2 font-mono text-[11px] text-text-muted uppercase">
                         {p.orden}
                       </div>
-                      <div className="col-span-5 font-mono text-[11px] text-fgn-blue flex flex-col">
+                      <div className="col-span-2 font-mono text-[11px] text-fgn-blue flex flex-col">
                         <span>{p.fecha ? formatDateES(p.fecha).toUpperCase() : '---'}</span>
                         {p.hora && <span className="text-[10px] text-fgn-gold font-bold">{formatTimeAMPM(p.hora)}</span>}
                       </div>
-                      <div className="col-span-2 flex items-center justify-end gap-1">
+                      <div className="col-span-2 flex items-center justify-center gap-2">
+                          <button 
+                            onClick={() => marcarInforme(p.id, p.informe === 'si' ? null : 'si')}
+                            className={`p-1.5 rounded transition-all border ${p.informe === 'si' ? 'bg-fgn-blue text-white border-fgn-blue' : 'bg-white text-slate-300 border-slate-200 hover:text-fgn-blue hover:border-fgn-blue'}`}
+                            title="Informe Realizado"
+                          >
+                            <FileCheck size={14} />
+                          </button>
+                          <button 
+                            onClick={() => marcarInforme(p.id, p.informe === 'no' ? null : 'no')}
+                            className={`p-1.5 rounded transition-all border ${p.informe === 'no' ? 'bg-slate-500 text-white border-slate-500' : 'bg-white text-slate-300 border-slate-200 hover:text-slate-500 hover:border-slate-500'}`}
+                            title="Sin Informe"
+                          >
+                            <FileX size={14} />
+                          </button>
+                      </div>
+                      <div className="col-span-2 flex items-center justify-center gap-2">
+                          <button 
+                            onClick={() => marcarAsistencia(p.id, p.asistencia === 'asistio' ? null : 'asistio')}
+                            className={`p-1.5 rounded transition-all border ${p.asistencia === 'asistio' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-300 border-slate-200 hover:text-green-500 hover:border-green-500'}`}
+                            title="Marcó Asistencia"
+                          >
+                            <UserCheck size={14} />
+                          </button>
+                          <button 
+                            onClick={() => marcarAsistencia(p.id, p.asistencia === 'no_asistio' ? null : 'no_asistio')}
+                            className={`p-1.5 rounded transition-all border ${p.asistencia === 'no_asistio' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-300 border-slate-200 hover:text-red-500 hover:border-red-500'}`}
+                            title="No Asistió"
+                          >
+                            <UserX size={14} />
+                          </button>
+                      </div>
+                      <div className="col-span-1 flex items-center justify-end gap-1">
                         <button 
                           onClick={() => {
                             setSelectedCitation(p);
