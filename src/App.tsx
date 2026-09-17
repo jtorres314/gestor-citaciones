@@ -1026,7 +1026,7 @@ const App = () => {
         horaExpedicion: item.horaExpedicion || "08:00",
         
         nombre: item.nombre || "CIUDADANO CITADO",
-        identificacion: item.identificacion || "",
+        identificacion: item.identificacion || item.cedula || "",
         genero: item.genero || "Femenino",
         direccion: item.direccion || "",
         correo: item.correo || "",
@@ -1053,8 +1053,12 @@ const App = () => {
       };
 
       const blob = await generateCitationFromTemplate(docData, customTemplateBuffer);
-      const cleanName = (item.nombre || 'Citado').replace(/[^a-zA-Z0-9_-]/g, '_');
-      const filename = `PLANTILLA_CITACION_${cleanName}_${item.orden || 'SinOrden'}.docx`;
+      const cleanName = (item.nombre || 'CITADO').toString().trim().replace(/[\s\\/:*?"<>|]+/g, '_').replace(/_+/g, '_');
+      const rawCedula = (item.identificacion || item.cedula || '').toString().trim();
+      const cleanCedula = rawCedula.replace(/[\s\\/:*?"<>|]+/g, '_').replace(/_+/g, '_');
+      const filename = cleanCedula 
+        ? `CITACION_${cleanName}_CC_${cleanCedula}.docx` 
+        : `CITACION_${cleanName}.docx`;
       downloadWordDocument(blob, filename);
       showSuccessToast(`Documento descargado: ${item.nombre || cleanName}`);
     } catch (err) {
