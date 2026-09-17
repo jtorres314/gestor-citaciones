@@ -10,7 +10,7 @@ import {
   Wand2, BrainCircuit, Loader2, FileUp, X, Check,
   History, Search, ArrowLeft, LogOut, Eye, ArrowUpDown,
   UserCheck, UserX, UserMinus, CheckCircle, RefreshCw, FileCode, PenTool,
-  FileSpreadsheet
+  FileSpreadsheet, Clock, MessageSquare, ExternalLink, Send
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { generateFPJ35WordDocument, generateCitationFromTemplate, downloadWordDocument } from './utils/docGenerator';
@@ -1386,11 +1386,117 @@ const App = () => {
     const telefono = (p.telefono_creador || config.telefono || '3176491486').trim();
     const investigador = (p.investigador_creador || config.investigador || 'Investigador Judicial').trim();
 
-    return `Buenas ${trato} ${nombre}, este mensaje es con el fin de realizarle citación para el día ${fechaFormateada} a las ${horaFormateada} en la ${lugarCompleto}, a diligencia de entrevista ordenada por el Fiscal ${fiscalLimpio} de la Unidad de ${unidadLimpia} de la Ciudad de ${ciudad} dentro de la Orden a Policía judicial No. ${orden}${casoTexto}.
+    return `Buenas ${trato} ${nombre}, este mensaje es con el fin de realizarle citación para el día ${fechaFormateada} a las ${horaFormateada} en la ${lugarCompleto}, a diligencia de entrevista ordenada por el Fiscal ${fiscalLimpio} de ${ciudad} dentro de la Orden a Policía judicial No. ${orden}${casoTexto}.
 
 Esta diligencia se requiere para que usted amplié las circunstancias de tiempo, modo y lugar, en la que ocurrieron los hechos en los que usted resulto como víctima, y se requiere que por favor traiga los documentos que acrediten la cuantía del detrimento patrimonial ocasionado.
 
 Por favor comunicarse lo antes posible a el numero ${telefono} (WhatsApp) y preguntar por el Investigador ${investigador}.`;
+  };
+
+  const limpiarTelefonoWhatsApp = (telRaw?: string): string => {
+    if (!telRaw) return '';
+    const digits = telRaw.replace(/\D/g, '');
+    if (!digits) return '';
+    
+    // Colombia: Números móviles de 10 dígitos (inician con 3) -> 573176491486
+    if (digits.length === 10 && (digits.startsWith('3') || digits.startsWith('6'))) {
+      return `57${digits}`;
+    }
+    // Si ya tiene prefijo 57 con 11 o 12 dígitos
+    if (digits.startsWith('57') && (digits.length === 12 || digits.length === 11)) {
+      return digits;
+    }
+    if (digits.length >= 10) {
+      return digits;
+    }
+    return digits;
+  };
+
+  const enviarWhatsApp = async (item: any) => {
+    const mensaje = generarMensaje(item);
+    
+    // 1. Siempre guardar una copia en el portapapeles
+    try {
+      await navigator.clipboard.writeText(mensaje);
+      if (item.id) {
+        setCopiadoIdx(item.id);
+        setTimeout(() => setCopiadoIdx(null), 2500);
+      }
+    } catch (e) {
+      console.warn("No se pudo copiar al portapapeles:", e);
+    }
+
+    const telDestino = item.telefono || item.celular || item.telefono_contacto || '';
+    const cleanPhone = limpiarTelefonoWhatsApp(telDestino);
+
+    if (cleanPhone) {
+      const whatsappUrl = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(mensaje)}`;
+      window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+      showSuccessToast(`Abriendo WhatsApp (+${cleanPhone})`);
+    } else {
+      const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(mensaje)}`;
+      window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+      showSuccessToast('Mensaje copiado. Abriendo WhatsApp para elegir contacto.');
+    }
+  };
+
+  const enviarCorreo = async (item: any) => {
+    let correoDestino = (item.correo || item.email || item.correo_electronico || '').trim();
+    const mensaje = generarMensaje(item);
+
+    // Copiar al portapapeles
+    try {
+      await navigator.clipboard.writeText(mensaje);
+    } catch (e) {}
+
+    if (!correoDestino) {
+      const { value: emailInput, isConfirmed } = await Swal.fire({
+        title: 'Enviar Citación por Correo',
+        html: `
+          <div class="text-left text-xs text-slate-700 space-y-2">
+            <p>El compareciente <strong>${item.nombre || 'Seleccionado'}</strong> no tiene un correo registrado.</p>
+            <p class="text-slate-500">Ingrese el correo electrónico del destinatario o continúe para abrir su aplicación de correo con el asunto y texto ya listos:</p>
+          </div>
+        `,
+        input: 'email',
+        inputPlaceholder: 'destinatario@ejemplo.com',
+        showCancelButton: true,
+        confirmButtonColor: '#4338ca',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Abrir Correo',
+        cancelButtonText: 'Cancelar'
+      });
+
+      if (!isConfirmed) return;
+      if (emailInput && emailInput.trim()) {
+        correoDestino = emailInput.trim();
+        // Actualizar el correo en memoria si tiene id
+        if (item.id) {
+          setPersonas(prev => prev.map(p => p.id === item.id ? { ...p, correo: correoDestino } : p));
+          setCitados(prev => prev.map(c => c.id === item.id ? { ...c, correo: correoDestino } : c));
+          setHistorial(prev => prev.map(h => h.id === item.id ? { ...h, correo: correoDestino } : h));
+          if (user && !user.isLocalGuest && db) {
+            try {
+              const citRef = doc(db, 'artifacts', appId, 'users', user.uid, 'historial', item.id);
+              updateDoc(citRef, { correo: correoDestino }).catch(console.error);
+            } catch (e) {}
+          }
+        }
+      }
+    }
+
+    const orden = (item.orden || item.opj || item.ot || '').trim();
+    const nombre = (item.nombre || '').trim();
+    const fiscal = (item.fiscal || '').trim();
+    const asunto = `CITACIÓN A DILIGENCIA DE ENTREVISTA - ${nombre ? nombre.toUpperCase() + ' - ' : ''}ORDEN POLICÍA JUDICIAL NO. ${orden}${fiscal ? ' - FISCALÍA ' + fiscal : ''}`;
+    
+    const mailtoUrl = correoDestino 
+      ? `mailto:${encodeURIComponent(correoDestino)}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(mensaje)}`
+      : `mailto:?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(mensaje)}`;
+    
+    // Abrir cliente de correo predeterminado
+    window.location.href = mailtoUrl;
+    showSuccessToast(correoDestino ? `Abriendo correo para: ${correoDestino}` : 'Abriendo cliente de correo con la citación cargada');
   };
 
   const copiarAlPortapapeles = async (texto: string, item: any) => {
@@ -1574,11 +1680,34 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (WhatsApp) y preg
                           <div className="col-span-12">
                             <span className="text-slate-500 font-medium">Señor(a):</span> <strong className="uppercase text-fgn-blue">{selectedCitation.nombre}{selectedCitation.identificacion && selectedCitation.identificacion.trim() ? ` con CC ${selectedCitation.identificacion.trim()}` : ''}</strong>
                           </div>
-                          <div className="col-span-8">
+                          <div className="col-span-12 sm:col-span-6">
                             <span className="text-slate-500 font-medium">Dirección:</span> <span>{selectedCitation.direccion || 'Dirección de residencia no especificada'}</span>
                           </div>
-                          <div className="col-span-4">
-                            <span className="text-slate-500 font-medium">Teléfono:</span> <span>{selectedCitation.telefono || '---'}</span>
+                          <div className="col-span-12 sm:col-span-6 flex flex-col gap-1.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <span className="text-slate-500 font-medium">Teléfono:</span> <span className="font-semibold">{selectedCitation.telefono || 'No registrado'}</span>
+                              </div>
+                              <button
+                                onClick={() => enviarWhatsApp(selectedCitation)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-300 transition-colors cursor-pointer shrink-0 shadow-2xs"
+                                title={selectedCitation.telefono ? `Enviar por WhatsApp (+${selectedCitation.telefono})` : 'Abrir WhatsApp'}
+                              >
+                                <MessageSquare size={11} /> <span>WhatsApp</span>
+                              </button>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="truncate">
+                                <span className="text-slate-500 font-medium">Correo:</span> <span className="font-semibold">{selectedCitation.correo || 'No registrado'}</span>
+                              </div>
+                              <button
+                                onClick={() => enviarCorreo(selectedCitation)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-indigo-800 bg-indigo-50 hover:bg-indigo-100 rounded border border-indigo-300 transition-colors cursor-pointer shrink-0 shadow-2xs"
+                                title={selectedCitation.correo ? `Enviar correo a ${selectedCitation.correo}` : 'Enviar por correo electrónico'}
+                              >
+                                <Mail size={11} /> <span>Correo</span>
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1647,24 +1776,42 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (WhatsApp) y preg
 
               {/* FOOTER ACTIONS */}
               <div className="px-4 sm:px-6 py-3 sm:py-4 bg-slate-50 border-t border-fgn-border flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2.5 sm:gap-3 shrink-0">
-                <button 
-                  onClick={() => handleDownloadWord(selectedCitation)}
-                  className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-blue-700 hover:bg-blue-900 text-white font-bold rounded text-[10px] tracking-widest uppercase transition-all shadow flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <FileDown size={15} /> Descargar FPJ-35 (.docx)
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button 
+                    onClick={() => handleDownloadWord(selectedCitation)}
+                    className="flex-1 sm:flex-initial px-3.5 sm:px-4 py-2.5 bg-blue-700 hover:bg-blue-900 text-white font-bold rounded text-[10px] tracking-widest uppercase transition-all shadow flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <FileDown size={14} /> FPJ-35 (.docx)
+                  </button>
+
+                  <button 
+                    onClick={() => enviarWhatsApp(selectedCitation)}
+                    className="flex-1 sm:flex-initial px-3.5 sm:px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-[10px] tracking-widest uppercase transition-all shadow flex items-center justify-center gap-1.5 cursor-pointer"
+                    title={selectedCitation.telefono ? `Abrir WhatsApp (+${selectedCitation.telefono})` : 'Abrir WhatsApp'}
+                  >
+                    <MessageSquare size={14} /> WhatsApp
+                  </button>
+
+                  <button 
+                    onClick={() => enviarCorreo(selectedCitation)}
+                    className="flex-1 sm:flex-initial px-3.5 sm:px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded text-[10px] tracking-widest uppercase transition-all shadow flex items-center justify-center gap-1.5 cursor-pointer"
+                    title={selectedCitation.correo ? `Enviar correo a ${selectedCitation.correo}` : 'Enviar por correo electrónico'}
+                  >
+                    <Mail size={14} /> Correo
+                  </button>
+                </div>
 
                 <div className="flex items-center gap-2 w-full sm:w-auto">
                   <button 
                     onClick={() => copiarAlPortapapeles(generarMensaje(selectedCitation), selectedCitation)}
-                    className={`flex-1 sm:flex-initial px-4 sm:px-6 py-2.5 sm:py-3 rounded text-[10px] font-bold tracking-widest uppercase transition-all flex items-center justify-center gap-2 cursor-pointer ${copiadoIdx === (selectedCitation.id || 'modal') ? 'bg-green-600 text-white' : 'bg-fgn-blue text-white hover:bg-black'}`}
+                    className={`flex-1 sm:flex-initial px-4 py-2.5 rounded text-[10px] font-bold tracking-widest uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${copiadoIdx === (selectedCitation.id || 'modal') ? 'bg-green-600 text-white' : 'bg-slate-800 text-white hover:bg-black'}`}
                   >
                     {copiadoIdx === (selectedCitation.id || 'modal') ? <Check size={14} /> : <Copy size={14} />}
                     {copiadoIdx === (selectedCitation.id || 'modal') ? 'COPIADO' : 'COPIAR TEXTO'}
                   </button>
                   <button 
                     onClick={() => setIsModalOpen(false)}
-                    className="px-4 sm:px-6 py-2.5 sm:py-3 bg-white border border-fgn-border text-text-muted font-bold rounded text-[10px] tracking-widest uppercase hover:bg-slate-100 transition-all cursor-pointer"
+                    className="px-4 py-2.5 bg-white border border-fgn-border text-text-muted font-bold rounded text-[10px] tracking-widest uppercase hover:bg-slate-100 transition-all cursor-pointer"
                   >
                     Cerrar
                   </button>
@@ -2289,6 +2436,18 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (WhatsApp) y preg
                               Fiscalía {p.fiscal}
                             </p>
                           )}
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                            {p.telefono && (
+                              <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                <Phone size={10} /> {p.telefono}
+                              </span>
+                            )}
+                            {p.correo && (
+                              <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-indigo-800 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200 truncate max-w-[180px]" title={p.correo}>
+                                <Mail size={10} /> {p.correo}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="col-span-2 font-mono text-[11px] text-text-muted uppercase">
                           {p.orden}
@@ -2348,6 +2507,20 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (WhatsApp) y preg
                             <FileDown size={16} />
                           </button>
                           <button 
+                            onClick={() => enviarWhatsApp(p)} 
+                            className={`p-1.5 rounded transition-all cursor-pointer ${copiadoIdx === p.id ? 'bg-green-600 text-white shadow-xs' : 'text-emerald-700 hover:bg-emerald-50 hover:text-emerald-900'}`}
+                            title={p.telefono ? `Enviar por WhatsApp (+${p.telefono})` : 'Enviar por WhatsApp (copiar y abrir)'}
+                          >
+                            {copiadoIdx === p.id ? <Check size={16} /> : <MessageSquare size={16} />}
+                          </button>
+                          <button 
+                            onClick={() => enviarCorreo(p)} 
+                            className="p-1.5 text-indigo-700 hover:bg-indigo-50 rounded transition-all cursor-pointer"
+                            title={p.correo ? `Enviar por Correo a ${p.correo}` : 'Enviar por Correo'}
+                          >
+                            <Mail size={16} />
+                          </button>
+                          <button 
                             onClick={() => eliminarDeHistorial(p.id, p.nombre)} 
                             className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-all cursor-pointer"
                             title="Eliminar Citación"
@@ -2359,99 +2532,148 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (WhatsApp) y preg
 
                       {/* MOBILE CARD */}
                       <div className="block md:hidden p-3.5 space-y-2.5">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="text-xs font-bold text-fgn-blue uppercase">
-                              {p.nombre}{p.identificacion && p.identificacion.trim() ? ` con CC ${p.identificacion.trim()}` : ''}
+                        <div className="flex items-start justify-between gap-2.5">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-fgn-blue uppercase leading-snug break-words">
+                              {p.nombre}
                             </p>
-                            {p.fiscal && (
-                              <p className="text-[10px] text-slate-500 font-medium uppercase mt-0.5">
-                                Fiscalía {p.fiscal}
-                              </p>
-                            )}
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                              {p.identificacion && p.identificacion.trim() && (
+                                <span className="font-mono text-[10px] font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                  CC: {p.identificacion.trim()}
+                                </span>
+                              )}
+                              {p.fiscal && (
+                                <span className="text-[10px] text-slate-600 font-medium uppercase bg-blue-50/70 text-blue-900 px-1.5 py-0.5 rounded border border-blue-100">
+                                  F. {p.fiscal}
+                                </span>
+                              )}
+                              {p.telefono && (
+                                <span className="font-mono text-[10px] font-semibold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 flex items-center gap-0.5">
+                                  <Phone size={9} /> {p.telefono}
+                                </span>
+                              )}
+                              {p.correo && (
+                                <span className="text-[10px] font-semibold text-indigo-800 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200 flex items-center gap-0.5 truncate max-w-[160px]">
+                                  <Mail size={9} /> {p.correo}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                          <span className="font-mono text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 shrink-0">
+                          <span className="font-mono text-[10px] font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 shrink-0">
                             {p.orden}
                           </span>
                         </div>
 
-                        <div className="flex items-center justify-between text-[11px] bg-slate-50 p-2 rounded border border-slate-100 font-mono">
-                          <span className="text-slate-600">
-                            {p.fecha ? formatDateES(p.fecha).toUpperCase() : '---'}
-                          </span>
+                        <div className="flex items-center justify-between text-[11px] bg-slate-50 px-2.5 py-2 rounded-lg border border-slate-200 font-mono">
+                          <div className="flex items-center gap-1.5 text-slate-700">
+                            <Calendar size={12} className="text-slate-400" />
+                            <span>{p.fecha ? formatDateES(p.fecha).toUpperCase() : '---'}</span>
+                          </div>
                           {p.hora && (
-                            <span className="text-fgn-blue font-bold">
-                              {formatTimeAMPM(p.hora)}
-                            </span>
+                            <div className="flex items-center gap-1 text-fgn-blue font-bold">
+                              <Clock size={12} className="text-fgn-gold" />
+                              <span>{formatTimeAMPM(p.hora)}</span>
+                            </div>
                           )}
                         </div>
 
+                        {/* Controles de Estado de Informe y Asistencia */}
                         <div className="grid grid-cols-2 gap-2 pt-1">
                           {/* Informe controls */}
-                          <div className="flex items-center justify-between p-1.5 bg-slate-50 rounded border border-slate-200 text-[10px]">
-                            <span className="font-bold text-slate-600 uppercase">Informe:</span>
-                            <div className="flex items-center gap-1.5">
+                          <div className="p-2 bg-slate-50 rounded-lg border border-slate-200 text-[11px]">
+                            <span className="font-bold text-slate-500 uppercase text-[9px] block mb-1.5 tracking-wider">Informe:</span>
+                            <div className="grid grid-cols-2 gap-1">
                               <button
                                 onClick={() => marcarInforme(p.id, p.informe === 'si' ? null : 'si')}
-                                className={`p-1.5 rounded transition-all border ${p.informe === 'si' ? 'bg-fgn-blue text-white border-fgn-blue' : 'bg-white text-slate-400 border-slate-300'}`}
+                                className={`py-1.5 px-1 rounded text-[10px] font-bold flex items-center justify-center gap-1 transition-all border cursor-pointer ${p.informe === 'si' ? 'bg-fgn-blue text-white border-fgn-blue shadow-2xs' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`}
                                 title="Con Informe"
                               >
-                                <FileCheck size={13} />
+                                <FileCheck size={12} />
+                                <span>Con</span>
                               </button>
                               <button
                                 onClick={() => marcarInforme(p.id, p.informe === 'no' ? null : 'no')}
-                                className={`p-1.5 rounded transition-all border ${p.informe === 'no' ? 'bg-slate-600 text-white border-slate-600' : 'bg-white text-slate-400 border-slate-300'}`}
+                                className={`py-1.5 px-1 rounded text-[10px] font-bold flex items-center justify-center gap-1 transition-all border cursor-pointer ${p.informe === 'no' ? 'bg-slate-700 text-white border-slate-700 shadow-2xs' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`}
                                 title="Sin Informe"
                               >
-                                <FileX size={13} />
+                                <FileX size={12} />
+                                <span>Sin</span>
                               </button>
                             </div>
                           </div>
 
                           {/* Asistencia controls */}
-                          <div className="flex items-center justify-between p-1.5 bg-slate-50 rounded border border-slate-200 text-[10px]">
-                            <span className="font-bold text-slate-600 uppercase">Asistencia:</span>
-                            <div className="flex items-center gap-1.5">
+                          <div className="p-2 bg-slate-50 rounded-lg border border-slate-200 text-[11px]">
+                            <span className="font-bold text-slate-500 uppercase text-[9px] block mb-1.5 tracking-wider">Asistencia:</span>
+                            <div className="grid grid-cols-2 gap-1">
                               <button
                                 onClick={() => marcarAsistencia(p.id, p.asistencia === 'asistio' ? null : 'asistio')}
-                                className={`p-1.5 rounded transition-all border ${p.asistencia === 'asistio' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-400 border-slate-300'}`}
+                                className={`py-1.5 px-1 rounded text-[10px] font-bold flex items-center justify-center gap-1 transition-all border cursor-pointer ${p.asistencia === 'asistio' ? 'bg-green-600 text-white border-green-600 shadow-2xs' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`}
                                 title="Asistió"
                               >
-                                <UserCheck size={13} />
+                                <UserCheck size={12} />
+                                <span>Sí</span>
                               </button>
                               <button
                                 onClick={() => marcarAsistencia(p.id, p.asistencia === 'no_asistio' ? null : 'no_asistio')}
-                                className={`p-1.5 rounded transition-all border ${p.asistencia === 'no_asistio' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-400 border-slate-300'}`}
+                                className={`py-1.5 px-1 rounded text-[10px] font-bold flex items-center justify-center gap-1 transition-all border cursor-pointer ${p.asistencia === 'no_asistio' ? 'bg-red-600 text-white border-red-600 shadow-2xs' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`}
                                 title="No Asistió"
                               >
-                                <UserX size={13} />
+                                <UserX size={12} />
+                                <span>No</span>
                               </button>
                             </div>
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
-                          <button 
-                            onClick={() => {
-                              setSelectedCitation(p);
-                              setIsModalOpen(true);
-                            }}
-                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-pink-700 bg-pink-50 hover:bg-pink-100 rounded border border-pink-200 font-bold transition-all cursor-pointer"
-                          >
-                            <Eye size={13} /> <span>Ver</span>
-                          </button>
-                          <button 
-                            onClick={() => handleDownloadWord(p)}
-                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 font-bold transition-all cursor-pointer"
-                          >
-                            <FileDown size={13} /> <span>Word</span>
-                          </button>
-                          <button 
-                            onClick={() => eliminarDeHistorial(p.id, p.nombre)} 
-                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded border border-red-200 font-bold transition-all cursor-pointer"
-                          >
-                            <Trash2 size={13} /> <span>Eliminar</span>
-                          </button>
+                        {/* Action buttons on mobile */}
+                        <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <button 
+                              onClick={() => enviarWhatsApp(p)} 
+                              className={`flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded-lg border font-bold transition-all cursor-pointer ${copiadoIdx === p.id ? 'bg-green-600 text-white border-green-600 shadow-xs' : 'text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border-emerald-300'}`}
+                              title={p.telefono ? `Abrir WhatsApp (+${p.telefono})` : 'Abrir WhatsApp'}
+                            >
+                              {copiadoIdx === p.id ? <Check size={14} /> : <MessageSquare size={14} />}
+                              <span>{copiadoIdx === p.id ? 'Copiado' : 'WhatsApp'}</span>
+                            </button>
+
+                            <button 
+                              onClick={() => enviarCorreo(p)}
+                              className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs text-indigo-800 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-300 font-bold transition-all cursor-pointer"
+                              title={p.correo ? `Enviar correo a ${p.correo}` : 'Enviar por Correo'}
+                            >
+                              <Mail size={14} /> <span>Correo</span>
+                            </button>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <button 
+                              onClick={() => handleDownloadWord(p)}
+                              className="flex-1 flex items-center justify-center gap-1 px-2.5 py-2 text-xs text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-300 font-bold transition-all cursor-pointer"
+                              title="Descargar Formato Word FPJ-35"
+                            >
+                              <FileDown size={14} /> <span>Word (.docx)</span>
+                            </button>
+                            <button 
+                              onClick={() => {
+                                setSelectedCitation(p);
+                                setIsModalOpen(true);
+                              }}
+                              className="flex-1 flex items-center justify-center gap-1 px-2.5 py-2 text-xs text-pink-800 bg-pink-50 hover:bg-pink-100 rounded-lg border border-pink-300 font-bold transition-all cursor-pointer"
+                              title="Ver Detalle"
+                            >
+                              <Eye size={13} /> <span>Ver</span>
+                            </button>
+                            <button 
+                              onClick={() => eliminarDeHistorial(p.id, p.nombre)} 
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg border border-red-200 transition-all cursor-pointer shrink-0"
+                              title="Eliminar de Archivo"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </motion.div>
@@ -3033,6 +3255,7 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (WhatsApp) y preg
           />
 
           <div className="bg-white rounded-xl border border-fgn-border overflow-hidden shadow-sm">
+            {/* DESKTOP TABLE HEADER */}
             <div className="hidden md:grid bg-bg-gray px-6 py-3 border-b border-fgn-border grid-cols-12 gap-4 text-[9px] font-bold text-text-muted uppercase tracking-widest">
               <div className="col-span-1 flex items-center justify-center">
                 <input 
@@ -3058,6 +3281,33 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (WhatsApp) y preg
                 <ArrowUpDown size={12} className={sortConfig.direction === 'asc' ? 'text-fgn-blue' : 'text-slate-300'} />
               </div>
               <div className="col-span-2 text-right">ACCIONES</div>
+            </div>
+
+            {/* MOBILE TABLE CONTROLS BAR */}
+            <div className="flex md:hidden bg-slate-100/90 px-3.5 py-2.5 border-b border-fgn-border items-center justify-between text-[11px] font-bold text-slate-700">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input 
+                  type="checkbox" 
+                  className="w-4 h-4 rounded border-fgn-border text-fgn-blue focus:ring-fgn-blue cursor-pointer"
+                  checked={paginatedPendientes.length > 0 && paginatedPendientes.every(p => selectedIds.includes(p.id))}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedIds(prev => Array.from(new Set([...prev, ...paginatedPendientes.map(p => p.id)])));
+                    } else {
+                      setSelectedIds(prev => prev.filter(id => !paginatedPendientes.some(p => p.id === id)));
+                    }
+                  }}
+                />
+                <span className="text-[10px] uppercase tracking-wider text-slate-600">Seleccionar todo</span>
+              </label>
+
+              <button 
+                onClick={toggleSort}
+                className="flex items-center gap-1 text-[10px] uppercase font-bold text-fgn-blue hover:text-blue-900 bg-white px-2.5 py-1 rounded border border-slate-200 shadow-2xs cursor-pointer"
+              >
+                <span>Fecha</span>
+                <ArrowUpDown size={11} className={sortConfig.direction === 'asc' ? 'text-fgn-blue' : 'text-slate-400'} />
+              </button>
             </div>
             
             <div className="divide-y divide-fgn-border/30">
@@ -3095,6 +3345,18 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (WhatsApp) y preg
                             Fiscalía {p.fiscal}
                           </p>
                         )}
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                          {p.telefono && (
+                            <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                              <Phone size={10} /> {p.telefono}
+                            </span>
+                          )}
+                          {p.correo && (
+                            <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-indigo-800 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200 truncate max-w-[180px]" title={p.correo}>
+                              <Mail size={10} /> {p.correo}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="col-span-2 font-mono text-[11px] text-text-muted uppercase">
                         {p.orden}
@@ -3129,11 +3391,18 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (WhatsApp) y preg
                           <CheckCircle size={16} />
                         </button>
                         <button 
-                          onClick={() => copiarAlPortapapeles(generarMensaje(p), p)} 
-                          className={`p-1.5 rounded transition-all cursor-pointer ${copiadoIdx === p.id ? 'bg-green-600 text-white' : 'text-green-600 hover:bg-green-50'}`}
-                          title="Copiar Texto WhatsApp"
+                          onClick={() => enviarWhatsApp(p)} 
+                          className={`p-1.5 rounded transition-all cursor-pointer ${copiadoIdx === p.id ? 'bg-green-600 text-white shadow-xs' : 'text-emerald-700 hover:bg-emerald-50 hover:text-emerald-900'}`}
+                          title={p.telefono ? `Enviar por WhatsApp (+${p.telefono})` : 'Enviar por WhatsApp (copiar y abrir)'}
                         >
-                          {copiadoIdx === p.id ? <Check size={16} /> : <Copy size={16} />}
+                          {copiadoIdx === p.id ? <Check size={16} /> : <MessageSquare size={16} />}
+                        </button>
+                        <button 
+                          onClick={() => enviarCorreo(p)} 
+                          className="p-1.5 text-indigo-700 hover:bg-indigo-50 rounded transition-all cursor-pointer"
+                          title={p.correo ? `Enviar por Correo a ${p.correo}` : 'Enviar por Correo'}
+                        >
+                          <Mail size={16} />
                         </button>
                         <button 
                           onClick={() => eliminarDeHistorial(p.id, p.nombre)} 
@@ -3147,79 +3416,121 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (WhatsApp) y preg
 
                     {/* MOBILE CARD */}
                     <div className="block md:hidden p-3.5 space-y-2.5">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-start gap-2.5">
-                          <input 
-                            type="checkbox" 
-                            className="w-4 h-4 mt-0.5 rounded border-fgn-border text-fgn-blue focus:ring-fgn-blue shrink-0 cursor-pointer"
-                            checked={selectedIds.includes(p.id)}
-                            onChange={() => toggleSelection(p.id)}
-                          />
-                          <div>
-                            <p className="text-xs font-bold text-fgn-blue uppercase">
-                              {p.nombre}{p.identificacion && p.identificacion.trim() ? ` con CC ${p.identificacion.trim()}` : ''}
+                      <div className="flex items-start justify-between gap-2.5">
+                        <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                          <label className="p-1 -m-1 cursor-pointer flex items-center justify-center">
+                            <input 
+                              type="checkbox" 
+                              className="w-4 h-4 mt-0.5 rounded border-fgn-border text-fgn-blue focus:ring-fgn-blue shrink-0 cursor-pointer"
+                              checked={selectedIds.includes(p.id)}
+                              onChange={() => toggleSelection(p.id)}
+                            />
+                          </label>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-fgn-blue uppercase leading-snug break-words">
+                              {p.nombre}
                             </p>
-                            {p.fiscal && (
-                              <p className="text-[10px] text-slate-500 font-medium uppercase mt-0.5">
-                                Fiscalía {p.fiscal}
-                              </p>
-                            )}
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                              {p.identificacion && p.identificacion.trim() && (
+                                <span className="font-mono text-[10px] font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                  CC: {p.identificacion.trim()}
+                                </span>
+                              )}
+                              {p.fiscal && (
+                                <span className="text-[10px] text-slate-600 font-medium uppercase bg-blue-50/70 text-blue-900 px-1.5 py-0.5 rounded border border-blue-100">
+                                  F. {p.fiscal}
+                                </span>
+                              )}
+                              {p.telefono && (
+                                <span className="font-mono text-[10px] font-semibold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 flex items-center gap-0.5">
+                                  <Phone size={9} /> {p.telefono}
+                                </span>
+                              )}
+                              {p.correo && (
+                                <span className="text-[10px] font-semibold text-indigo-800 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200 flex items-center gap-0.5 truncate max-w-[160px]">
+                                  <Mail size={9} /> {p.correo}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
-                        <span className="font-mono text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 shrink-0">
-                          {p.orden}
-                        </span>
+                        <div className="shrink-0 flex flex-col items-end">
+                          <span className="font-mono text-[10px] font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                            {p.orden}
+                          </span>
+                        </div>
                       </div>
 
-                      <div className="flex items-center justify-between text-[11px] bg-slate-50 p-2 rounded border border-slate-100 font-mono">
-                        <span className="text-slate-600">
-                          {p.fecha ? formatDateES(p.fecha).toUpperCase() : '---'}
-                        </span>
+                      <div className="flex items-center justify-between text-[11px] bg-slate-50 px-2.5 py-2 rounded-lg border border-slate-200 font-mono">
+                        <div className="flex items-center gap-1.5 text-slate-700">
+                          <Calendar size={12} className="text-slate-400" />
+                          <span>{p.fecha ? formatDateES(p.fecha).toUpperCase() : '---'}</span>
+                        </div>
                         {p.hora && (
-                          <span className="text-fgn-blue font-bold">
-                            {formatTimeAMPM(p.hora)}
-                          </span>
+                          <div className="flex items-center gap-1 text-fgn-blue font-bold">
+                            <Clock size={12} className="text-fgn-gold" />
+                            <span>{formatTimeAMPM(p.hora)}</span>
+                          </div>
                         )}
                       </div>
 
-                      <div className="flex flex-wrap items-center justify-end gap-1.5 pt-1 border-t border-slate-100">
-                        <button 
-                          onClick={() => marcarComoCitado(p)}
-                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 font-bold transition-all cursor-pointer"
-                          title="Marcar como Citado"
-                        >
-                          <CheckCircle size={13} /> <span>Citado</span>
-                        </button>
-                        <button 
-                          onClick={() => copiarAlPortapapeles(generarMensaje(p), p)} 
-                          className={`flex items-center gap-1 px-2.5 py-1.5 text-xs rounded border font-bold transition-all cursor-pointer ${copiadoIdx === p.id ? 'bg-green-600 text-white border-green-600' : 'text-green-700 bg-green-50 hover:bg-green-100 border-green-200'}`}
-                        >
-                          {copiadoIdx === p.id ? <Check size={13} /> : <Copy size={13} />}
-                          <span>{copiadoIdx === p.id ? 'Copiado' : 'WhatsApp'}</span>
-                        </button>
-                        <button 
-                          onClick={() => handleDownloadWord(p)}
-                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded border border-indigo-200 font-bold transition-all cursor-pointer"
-                        >
-                          <FileDown size={13} /> <span>Word</span>
-                        </button>
-                        <button 
-                          onClick={() => {
-                            setSelectedCitation(p);
-                            setIsModalOpen(true);
-                          }}
-                          className="p-1.5 text-pink-600 hover:bg-pink-50 rounded border border-pink-200 transition-all cursor-pointer"
-                          title="Ver Detalle"
-                        >
-                          <Eye size={15} />
-                        </button>
-                        <button 
-                          onClick={() => eliminarDeHistorial(p.id, p.nombre)} 
-                          className="p-1.5 text-red-600 hover:bg-red-50 rounded border border-red-200 transition-all cursor-pointer" 
-                          title="Eliminar Citación"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                      {/* MOBILE ACTION BUTTONS */}
+                      <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button 
+                            onClick={() => enviarWhatsApp(p)} 
+                            className={`flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded-lg border font-bold transition-all cursor-pointer ${copiadoIdx === p.id ? 'bg-green-600 text-white border-green-600 shadow-xs' : 'text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border-emerald-300'}`}
+                            title={p.telefono ? `Abrir WhatsApp (+${p.telefono})` : 'Abrir WhatsApp'}
+                          >
+                            {copiadoIdx === p.id ? <Check size={14} /> : <MessageSquare size={14} />}
+                            <span>{copiadoIdx === p.id ? 'Copiado' : 'WhatsApp'}</span>
+                          </button>
+
+                          <button 
+                            onClick={() => enviarCorreo(p)}
+                            className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs text-indigo-800 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-300 font-bold transition-all cursor-pointer"
+                            title={p.correo ? `Enviar correo a ${p.correo}` : 'Enviar por Correo'}
+                          >
+                            <Mail size={14} /> <span>Correo</span>
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button 
+                            onClick={() => handleDownloadWord(p)}
+                            className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-300 font-bold transition-all cursor-pointer"
+                            title="Descargar Formato Word FPJ-35"
+                          >
+                            <FileDown size={14} /> <span>Word (.docx)</span>
+                          </button>
+                          <button 
+                            onClick={() => marcarComoCitado(p)}
+                            className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-300 font-bold transition-all cursor-pointer"
+                            title="Marcar como Citado"
+                          >
+                            <CheckCircle size={14} /> <span>Marcar Citado</span>
+                          </button>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <button 
+                            onClick={() => {
+                              setSelectedCitation(p);
+                              setIsModalOpen(true);
+                            }}
+                            className="flex-1 flex items-center justify-center gap-1 px-2.5 py-2 text-xs text-pink-700 bg-pink-50 hover:bg-pink-100 rounded-lg border border-pink-300 font-bold transition-all cursor-pointer"
+                            title="Ver Detalle Completo"
+                          >
+                            <Eye size={14} /> <span>Ver Citación</span>
+                          </button>
+                          <button 
+                            onClick={() => eliminarDeHistorial(p.id, p.nombre)} 
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg border border-red-200 transition-all cursor-pointer shrink-0" 
+                            title="Eliminar Citación"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -3276,6 +3587,7 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (WhatsApp) y preg
           />
 
           <div className="bg-white rounded-xl border border-fgn-border overflow-hidden shadow-sm">
+            {/* DESKTOP TABLE HEADER */}
             <div className="hidden md:grid bg-bg-gray px-6 py-3 border-b border-fgn-border grid-cols-12 gap-4 text-[9px] font-bold text-text-muted uppercase tracking-widest">
               <div className="col-span-3">PARTICIPANTE</div>
               <div className="col-span-2">ORDEN OPJ</div>
@@ -3289,6 +3601,20 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (WhatsApp) y preg
               <div className="col-span-2 text-center">INFORME</div>
               <div className="col-span-2 text-center">ASISTENCIA</div>
               <div className="col-span-1 text-right">ACCIONES</div>
+            </div>
+
+            {/* MOBILE TABLE CONTROLS BAR */}
+            <div className="flex md:hidden bg-slate-100/90 px-3.5 py-2.5 border-b border-fgn-border items-center justify-between text-[11px] font-bold text-slate-700">
+              <span className="text-[10px] uppercase tracking-wider text-slate-600 font-bold">
+                Mostrando {filteredCitados.length} citados
+              </span>
+              <button 
+                onClick={toggleSort}
+                className="flex items-center gap-1 text-[10px] uppercase font-bold text-fgn-blue hover:text-blue-900 bg-white px-2.5 py-1 rounded border border-slate-200 shadow-2xs cursor-pointer"
+              >
+                <span>Fecha</span>
+                <ArrowUpDown size={11} className={sortConfig.direction === 'asc' ? 'text-fgn-blue' : 'text-slate-400'} />
+              </button>
             </div>
             
             <div className="divide-y divide-fgn-border/30">
@@ -3318,6 +3644,18 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (WhatsApp) y preg
                             Fiscalía {p.fiscal}
                           </p>
                         )}
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                          {p.telefono && (
+                            <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                              <Phone size={10} /> {p.telefono}
+                            </span>
+                          )}
+                          {p.correo && (
+                            <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-indigo-800 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200 truncate max-w-[180px]" title={p.correo}>
+                              <Mail size={10} /> {p.correo}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="col-span-2 font-mono text-[11px] text-text-muted uppercase">
                         {p.orden}
@@ -3377,11 +3715,18 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (WhatsApp) y preg
                           <FileDown size={16} />
                         </button>
                         <button 
-                          onClick={() => copiarAlPortapapeles(generarMensaje(p), p)} 
-                          className={`p-1.5 rounded transition-all cursor-pointer ${copiadoIdx === p.id ? 'bg-green-600 text-white' : 'text-green-600 hover:bg-green-50'}`}
-                          title="Copiar Texto WhatsApp"
+                          onClick={() => enviarWhatsApp(p)} 
+                          className={`p-1.5 rounded transition-all cursor-pointer ${copiadoIdx === p.id ? 'bg-green-600 text-white shadow-xs' : 'text-emerald-700 hover:bg-emerald-50 hover:text-emerald-900'}`}
+                          title={p.telefono ? `Enviar por WhatsApp (+${p.telefono})` : 'Enviar por WhatsApp (copiar y abrir)'}
                         >
-                          {copiadoIdx === p.id ? <Check size={16} /> : <Copy size={16} />}
+                          {copiadoIdx === p.id ? <Check size={16} /> : <MessageSquare size={16} />}
+                        </button>
+                        <button 
+                          onClick={() => enviarCorreo(p)} 
+                          className="p-1.5 text-indigo-700 hover:bg-indigo-50 rounded transition-all cursor-pointer"
+                          title={p.correo ? `Enviar por Correo a ${p.correo}` : 'Enviar por Correo'}
+                        >
+                          <Mail size={16} />
                         </button>
                         <button 
                           onClick={() => eliminarDeHistorial(p.id, p.nombre)} 
@@ -3395,108 +3740,148 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (WhatsApp) y preg
 
                     {/* MOBILE CARD */}
                     <div className="block md:hidden p-3.5 space-y-2.5">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="text-xs font-bold text-fgn-blue uppercase">
-                            {p.nombre}{p.identificacion && p.identificacion.trim() ? ` con CC ${p.identificacion.trim()}` : ''}
+                      <div className="flex items-start justify-between gap-2.5">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-fgn-blue uppercase leading-snug break-words">
+                            {p.nombre}
                           </p>
-                          {p.fiscal && (
-                            <p className="text-[10px] text-slate-500 font-medium uppercase mt-0.5">
-                              Fiscalía {p.fiscal}
-                            </p>
-                          )}
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                            {p.identificacion && p.identificacion.trim() && (
+                              <span className="font-mono text-[10px] font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                CC: {p.identificacion.trim()}
+                              </span>
+                            )}
+                            {p.fiscal && (
+                              <span className="text-[10px] text-slate-600 font-medium uppercase bg-blue-50/70 text-blue-900 px-1.5 py-0.5 rounded border border-blue-100">
+                                F. {p.fiscal}
+                              </span>
+                            )}
+                            {p.telefono && (
+                              <span className="font-mono text-[10px] font-semibold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 flex items-center gap-0.5">
+                                <Phone size={9} /> {p.telefono}
+                              </span>
+                            )}
+                            {p.correo && (
+                              <span className="text-[10px] font-semibold text-indigo-800 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200 flex items-center gap-0.5 truncate max-w-[160px]">
+                                <Mail size={9} /> {p.correo}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <span className="font-mono text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 shrink-0">
+                        <span className="font-mono text-[10px] font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 shrink-0">
                           {p.orden}
                         </span>
                       </div>
 
-                      <div className="flex items-center justify-between text-[11px] bg-slate-50 p-2 rounded border border-slate-100 font-mono">
-                        <span className="text-slate-600">
-                          {p.fecha ? formatDateES(p.fecha).toUpperCase() : '---'}
-                        </span>
+                      <div className="flex items-center justify-between text-[11px] bg-slate-50 px-2.5 py-2 rounded-lg border border-slate-200 font-mono">
+                        <div className="flex items-center gap-1.5 text-slate-700">
+                          <Calendar size={12} className="text-slate-400" />
+                          <span>{p.fecha ? formatDateES(p.fecha).toUpperCase() : '---'}</span>
+                        </div>
                         {p.hora && (
-                          <span className="text-fgn-blue font-bold">
-                            {formatTimeAMPM(p.hora)}
-                          </span>
+                          <div className="flex items-center gap-1 text-fgn-blue font-bold">
+                            <Clock size={12} className="text-fgn-gold" />
+                            <span>{formatTimeAMPM(p.hora)}</span>
+                          </div>
                         )}
                       </div>
 
+                      {/* Controles de Estado de Informe y Asistencia */}
                       <div className="grid grid-cols-2 gap-2 pt-1">
                         {/* Informe controls */}
-                        <div className="flex items-center justify-between p-1.5 bg-slate-50 rounded border border-slate-200 text-[10px]">
-                          <span className="font-bold text-slate-600 uppercase">Informe:</span>
-                          <div className="flex items-center gap-1.5">
+                        <div className="p-2 bg-slate-50 rounded-lg border border-slate-200 text-[11px]">
+                          <span className="font-bold text-slate-500 uppercase text-[9px] block mb-1.5 tracking-wider">Informe:</span>
+                          <div className="grid grid-cols-2 gap-1">
                             <button
                               onClick={() => marcarInforme(p.id, p.informe === 'si' ? null : 'si')}
-                              className={`p-1.5 rounded transition-all border ${p.informe === 'si' ? 'bg-fgn-blue text-white border-fgn-blue' : 'bg-white text-slate-400 border-slate-300'}`}
+                              className={`py-1.5 px-1 rounded text-[10px] font-bold flex items-center justify-center gap-1 transition-all border cursor-pointer ${p.informe === 'si' ? 'bg-fgn-blue text-white border-fgn-blue shadow-2xs' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`}
                               title="Con Informe"
                             >
-                              <FileCheck size={13} />
+                              <FileCheck size={12} />
+                              <span>Con</span>
                             </button>
                             <button
                               onClick={() => marcarInforme(p.id, p.informe === 'no' ? null : 'no')}
-                              className={`p-1.5 rounded transition-all border ${p.informe === 'no' ? 'bg-slate-600 text-white border-slate-600' : 'bg-white text-slate-400 border-slate-300'}`}
+                              className={`py-1.5 px-1 rounded text-[10px] font-bold flex items-center justify-center gap-1 transition-all border cursor-pointer ${p.informe === 'no' ? 'bg-slate-700 text-white border-slate-700 shadow-2xs' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`}
                               title="Sin Informe"
                             >
-                              <FileX size={13} />
+                              <FileX size={12} />
+                              <span>Sin</span>
                             </button>
                           </div>
                         </div>
 
                         {/* Asistencia controls */}
-                        <div className="flex items-center justify-between p-1.5 bg-slate-50 rounded border border-slate-200 text-[10px]">
-                          <span className="font-bold text-slate-600 uppercase">Asistencia:</span>
-                          <div className="flex items-center gap-1.5">
+                        <div className="p-2 bg-slate-50 rounded-lg border border-slate-200 text-[11px]">
+                          <span className="font-bold text-slate-500 uppercase text-[9px] block mb-1.5 tracking-wider">Asistencia:</span>
+                          <div className="grid grid-cols-2 gap-1">
                             <button
                               onClick={() => marcarAsistencia(p.id, p.asistencia === 'asistio' ? null : 'asistio')}
-                              className={`p-1.5 rounded transition-all border ${p.asistencia === 'asistio' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-400 border-slate-300'}`}
+                              className={`py-1.5 px-1 rounded text-[10px] font-bold flex items-center justify-center gap-1 transition-all border cursor-pointer ${p.asistencia === 'asistio' ? 'bg-green-600 text-white border-green-600 shadow-2xs' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`}
                               title="Asistió"
                             >
-                              <UserCheck size={13} />
+                              <UserCheck size={12} />
+                              <span>Sí</span>
                             </button>
                             <button
                               onClick={() => marcarAsistencia(p.id, p.asistencia === 'no_asistio' ? null : 'no_asistio')}
-                              className={`p-1.5 rounded transition-all border ${p.asistencia === 'no_asistio' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-400 border-slate-300'}`}
+                              className={`py-1.5 px-1 rounded text-[10px] font-bold flex items-center justify-center gap-1 transition-all border cursor-pointer ${p.asistencia === 'no_asistio' ? 'bg-red-600 text-white border-red-600 shadow-2xs' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`}
                               title="No Asistió"
                             >
-                              <UserX size={13} />
+                              <UserX size={12} />
+                              <span>No</span>
                             </button>
                           </div>
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center justify-end gap-1.5 pt-1 border-t border-slate-100">
-                        <button 
-                          onClick={() => copiarAlPortapapeles(generarMensaje(p), p)} 
-                          className={`flex items-center gap-1 px-2.5 py-1.5 text-xs rounded border font-bold transition-all cursor-pointer ${copiadoIdx === p.id ? 'bg-green-600 text-white border-green-600' : 'text-green-700 bg-green-50 hover:bg-green-100 border-green-200'}`}
-                        >
-                          {copiadoIdx === p.id ? <Check size={13} /> : <Copy size={13} />}
-                          <span>{copiadoIdx === p.id ? 'Copiado' : 'WhatsApp'}</span>
-                        </button>
-                        <button 
-                          onClick={() => handleDownloadWord(p)}
-                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded border border-indigo-200 font-bold transition-all cursor-pointer"
-                        >
-                          <FileDown size={13} /> <span>Word</span>
-                        </button>
-                        <button 
-                          onClick={() => {
-                            setSelectedCitation(p);
-                            setIsModalOpen(true);
-                          }}
-                          className="p-1.5 text-pink-600 hover:bg-pink-50 rounded border border-pink-200 transition-all cursor-pointer"
-                          title="Ver Citación"
-                        >
-                          <Eye size={15} />
-                        </button>
-                        <button 
-                          onClick={() => eliminarDeHistorial(p.id, p.nombre)} 
-                          className="p-1.5 text-red-600 hover:bg-red-50 rounded border border-red-200 transition-all cursor-pointer" 
-                          title="Eliminar Citación"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                      {/* Botones de acción móviles */}
+                      <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button 
+                            onClick={() => enviarWhatsApp(p)} 
+                            className={`flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded-lg border font-bold transition-all cursor-pointer ${copiadoIdx === p.id ? 'bg-green-600 text-white border-green-600 shadow-xs' : 'text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border-emerald-300'}`}
+                            title={p.telefono ? `Abrir WhatsApp (+${p.telefono})` : 'Abrir WhatsApp'}
+                          >
+                            {copiadoIdx === p.id ? <Check size={14} /> : <MessageSquare size={14} />}
+                            <span>{copiadoIdx === p.id ? 'Copiado' : 'WhatsApp'}</span>
+                          </button>
+
+                          <button 
+                            onClick={() => enviarCorreo(p)}
+                            className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs text-indigo-800 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-300 font-bold transition-all cursor-pointer"
+                            title={p.correo ? `Enviar correo a ${p.correo}` : 'Enviar por Correo'}
+                          >
+                            <Mail size={14} /> <span>Correo</span>
+                          </button>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <button 
+                            onClick={() => handleDownloadWord(p)}
+                            className="flex-1 flex items-center justify-center gap-1 px-2.5 py-2 text-xs text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-300 font-bold transition-all cursor-pointer"
+                            title="Descargar Formato Word FPJ-35"
+                          >
+                            <FileDown size={14} /> <span>Word (.docx)</span>
+                          </button>
+                          <button 
+                            onClick={() => {
+                              setSelectedCitation(p);
+                              setIsModalOpen(true);
+                            }}
+                            className="flex-1 flex items-center justify-center gap-1 px-2.5 py-2 text-xs text-pink-800 bg-pink-50 hover:bg-pink-100 rounded-lg border border-pink-300 font-bold transition-all cursor-pointer"
+                            title="Ver Citación"
+                          >
+                            <Eye size={14} /> <span>Ver Citación</span>
+                          </button>
+                          <button 
+                            onClick={() => eliminarDeHistorial(p.id, p.nombre)} 
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg border border-red-200 transition-all cursor-pointer shrink-0" 
+                            title="Eliminar Citación"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -3519,13 +3904,22 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (WhatsApp) y preg
 
       </main>
 
-      <footer className="max-w-7xl mx-auto px-6 mt-16 pb-8">
-        <div className="border-t border-fgn-border pt-8 flex flex-col md:flex-row justify-between items-center gap-4 font-bold text-[10px] text-text-muted uppercase tracking-wider">
-           <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <span>Conectado a Firebase Firestore • Gemini AI v2.5</span>
+      {/* FOOTER RESPONSIVE ORGANIZADO */}
+      <footer className="w-full max-w-7xl mx-auto px-4 sm:px-6 mt-12 sm:mt-16 pb-12 sm:pb-8">
+        <div className="border-t border-fgn-border/60 pt-6 sm:pt-8 flex flex-col md:flex-row justify-between items-center gap-3.5 text-center md:text-left">
+           <div className="flex flex-wrap items-center justify-center md:justify-start gap-2.5 text-[11px] text-text-muted font-medium">
+              <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full text-emerald-800 font-bold text-[10px]">
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>Conectado a Firestore</span>
+              </div>
+              <span className="hidden sm:inline text-slate-300">•</span>
+              <span className="text-slate-500 text-[10px] sm:text-[11px] font-semibold">
+                Sistema de Citaciones Judiciales (SICyJ)
+              </span>
            </div>
-           <p>© 2026 Fiscalía General de la Nación - República de Colombia</p>
+           <p className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+             © 2026 Fiscalía General de la Nación • República de Colombia
+           </p>
         </div>
       </footer>
     </div>

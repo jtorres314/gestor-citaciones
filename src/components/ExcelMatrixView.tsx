@@ -16,7 +16,9 @@ import {
   CheckCheck,
   Edit3,
   Eye,
-  X
+  X,
+  LayoutList,
+  Table as TableIcon
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
@@ -266,6 +268,7 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
   const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const [filterTab, setFilterTab] = useState<'todas' | 'pendientes' | 'generadas'>('todas');
+  const [mobileViewMode, setMobileViewMode] = useState<'cards' | 'table'>('cards');
   const [editingRowMobile, setEditingRowMobile] = useState<ExcelInsumoRow | null>(null);
 
   const pendingRows = useMemo(() => rows.filter(r => !r.generada), [rows]);
@@ -924,7 +927,34 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
           </button>
         </div>
 
-        <div className="text-[11px] text-slate-600 flex items-center gap-2">
+        {/* Switcher de Vista en Móvil (Tarjetas vs Tabla) */}
+        <div className="flex sm:hidden items-center justify-between gap-2 pt-2 border-t border-slate-100">
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Modo Móvil:</span>
+          <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+            <button
+              onClick={() => setMobileViewMode('cards')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                mobileViewMode === 'cards' 
+                  ? 'bg-white text-fgn-blue shadow-2xs' 
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <LayoutList size={12} /> Tarjetas
+            </button>
+            <button
+              onClick={() => setMobileViewMode('table')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                mobileViewMode === 'table' 
+                  ? 'bg-white text-fgn-blue shadow-2xs' 
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <TableIcon size={12} /> Tabla
+            </button>
+          </div>
+        </div>
+
+        <div className="hidden sm:flex text-[11px] text-slate-600 items-center gap-2">
           <AlertCircle size={14} className="text-fgn-blue shrink-0" />
           <span>
             Cada nueva fila ingresa como <b>Pendiente</b>. Al presionar <b>Generar</b>, se procesan y marcan como <b>Generadas</b>.
@@ -932,8 +962,102 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
         </div>
       </div>
 
-      {/* Contenedor de la Tabla Simulación Excel con Columna GENERADA */}
-      <div className="bg-white rounded-xl border border-slate-300 shadow-sm overflow-hidden">
+      {/* VISTA MÓVIL EN MODO TARJETAS (sm:hidden cuando mobileViewMode === 'cards') */}
+      {mobileViewMode === 'cards' && (
+        <div className="block sm:hidden space-y-3">
+          {visibleRows.length === 0 ? (
+            <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+              <FileSpreadsheet size={36} className="mx-auto text-slate-300 mb-2" />
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                {rows.length === 0 ? 'No hay filas en la hoja' : 'No hay filas en esta pestaña'}
+              </p>
+            </div>
+          ) : (
+            visibleRows.map((row, idx) => {
+              const rowDisplayNum = rows.findIndex(r => r.id === row.id) + 1;
+              const isGenerada = !!row.generada;
+              return (
+                <div 
+                  key={row.id}
+                  className={`bg-white rounded-xl border p-3.5 space-y-2.5 shadow-2xs transition-all ${
+                    isGenerada ? 'border-amber-300 bg-amber-50/25' : 'border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 shrink-0">
+                        #{rowDisplayNum}
+                      </span>
+                      <p className="text-xs font-bold text-fgn-blue uppercase leading-snug break-words">
+                        {row.nombre || <span className="text-slate-400 italic">Sin nombre</span>}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => toggleGenerada(row.id)}
+                      className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded border shrink-0 cursor-pointer transition-colors ${
+                        isGenerada 
+                          ? 'bg-amber-100 text-amber-900 border-amber-300' 
+                          : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      }`}
+                    >
+                      {isGenerada ? 'Generada' : 'Pendiente'}
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-50 p-2.5 rounded-lg border border-slate-200 font-mono">
+                    <div>
+                      <span className="text-[9px] text-slate-500 font-bold uppercase block">Cédula:</span>
+                      <span className="text-slate-800 font-semibold">{row.cedula || '---'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-500 font-bold uppercase block">OPJ / Caso:</span>
+                      <span className="text-slate-800 font-semibold">{row.opj || row.nunc || '---'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-500 font-bold uppercase block">Fiscalía:</span>
+                      <span className="text-slate-800 font-semibold">{row.fiscal || '---'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-500 font-bold uppercase block">Fecha y Hora:</span>
+                      <span className="text-fgn-blue font-bold">
+                        {row.fecha || '---'} {row.hora ? `• ${row.hora}` : ''}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Acciones de Tarjeta Móvil */}
+                  <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                    <button
+                      onClick={() => setEditingRowMobile(row)}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 bg-fgn-blue/5 hover:bg-fgn-blue/10 text-fgn-blue font-bold text-xs rounded-lg border border-fgn-blue/30 cursor-pointer transition-colors"
+                    >
+                      <Edit3 size={13} /> <span>Editar Fila</span>
+                    </button>
+                    <button
+                      onClick={() => removeRow(row.id, row.nombre)}
+                      className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg border border-red-200 cursor-pointer transition-colors"
+                      title="Eliminar fila"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+
+          {/* Botón rápido en móvil */}
+          <button
+            onClick={addRow}
+            className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-300 flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+          >
+            <Plus size={14} /> Agregar Nueva Fila
+          </button>
+        </div>
+      )}
+
+      {/* Contenedor de la Tabla Simulación Excel con Columna GENERADA (Visible siempre en sm+, o en móvil cuando mobileViewMode === 'table') */}
+      <div className={`${mobileViewMode === 'cards' ? 'hidden sm:block' : 'block'} bg-white rounded-xl border border-slate-300 shadow-sm overflow-hidden`}>
         {/* Banner informativo de desplazamiento táctil para móviles */}
         <div className="sm:hidden px-3 py-1.5 bg-amber-50/80 border-b border-amber-200 text-amber-900 text-[10px] font-semibold flex items-center justify-between">
           <span>↔ Desliza para ver las 11 columnas o toca ✎ para editar</span>

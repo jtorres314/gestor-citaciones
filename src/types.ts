@@ -8,6 +8,7 @@ export interface Citacion {
   fecha: string;
   hora: string;
   telefono?: string;
+  correo?: string;
   identificacion?: string;
   motivo?: string;
   direccion?: string;
