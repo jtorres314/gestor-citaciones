@@ -22,6 +22,132 @@ import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
 import { ExcelInsumoRow } from '../types';
 
+const SPANISH_MONTHS: Record<string, string> = {
+  ene: '01', enero: '01',
+  feb: '02', febrero: '02',
+  mar: '03', marzo: '03',
+  abr: '04', abril: '04',
+  may: '05', mayo: '05',
+  jun: '06', junio: '06',
+  jul: '07', julio: '07',
+  ago: '08', agosto: '08',
+  sep: '09', sept: '09', septiembre: '09', setiembre: '09',
+  oct: '10', octubre: '10',
+  nov: '11', noviembre: '11',
+  dic: '12', diciembre: '12'
+};
+
+export const parseExcelDate = (val: any): string => {
+  if (val === null || val === undefined) {
+    return new Date().toISOString().split('T')[0];
+  }
+  const str = String(val).trim();
+  if (!str) {
+    return new Date().toISOString().split('T')[0];
+  }
+
+  // ISO date YYYY-MM-DD
+  const isoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
+  }
+
+  // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+  const dmyMatch = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
+  if (dmyMatch) {
+    let day = dmyMatch[1].padStart(2, '0');
+    let month = dmyMatch[2].padStart(2, '0');
+    let year = dmyMatch[3];
+    if (year.length === 2) {
+      year = '20' + year;
+    }
+    // Swap if month > 12 and day <= 12
+    if (parseInt(month, 10) > 12 && parseInt(day, 10) <= 12) {
+      const temp = day;
+      day = month;
+      month = temp;
+    }
+    return `${year}-${month}-${day}`;
+  }
+
+  // DD de [Mes] de YYYY or DD-[Mes]-YYYY or DD/[Mes]/YYYY
+  const textMatch = str.match(/^(\d{1,2})\s*(?:de|\-|\/)\s*([a-zA-ZáéíóúÁÉÍÓÚ]+)\s*(?:de|\-|\/)?\s*(\d{2,4})/i);
+  if (textMatch) {
+    let day = textMatch[1].padStart(2, '0');
+    let monthName = textMatch[2].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    let year = textMatch[3];
+    if (year.length === 2) year = '20' + year;
+    const month = SPANISH_MONTHS[monthName.slice(0, 3)] || SPANISH_MONTHS[monthName];
+    if (month) {
+      return `${year}-${month}-${day}`;
+    }
+  }
+
+  // YYYY/MM/DD or YYYY.MM.DD
+  const ymdMatch = str.match(/^(\d{4})[\/\.](\d{1,2})[\/\.](\d{1,2})/);
+  if (ymdMatch) {
+    const year = ymdMatch[1];
+    const month = ymdMatch[2].padStart(2, '0');
+    const day = ymdMatch[3].padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  // Excel serial number (numeric, e.g. 45397)
+  if (/^\d{4,5}(\.\d+)?$/.test(str)) {
+    const num = parseFloat(str);
+    const date = new Date(Math.round((num - 25569) * 86400 * 1000));
+    if (!isNaN(date.getTime())) {
+      return date.toISOString().split('T')[0];
+    }
+  }
+
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().split('T')[0];
+  }
+
+  return new Date().toISOString().split('T')[0];
+};
+
+export const parseExcelTime = (val: any): string => {
+  if (val === null || val === undefined) return '08:30 AM';
+  const str = String(val).trim();
+  if (!str) return '08:30 AM';
+
+  // Format 08:30 AM or 8:30 PM
+  const ampmMatch = str.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM|am|pm)$/i);
+  if (ampmMatch) {
+    const hh = ampmMatch[1].padStart(2, '0');
+    const mm = ampmMatch[2];
+    const ampm = ampmMatch[3].toUpperCase();
+    return `${hh}:${mm} ${ampm}`;
+  }
+
+  // 24-hour time 14:30 or 14:30:00 or 8:30
+  const time24Match = str.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (time24Match) {
+    let hour = parseInt(time24Match[1], 10);
+    const minute = time24Match[2];
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    hour = hour % 12;
+    if (hour === 0) hour = 12;
+    return `${String(hour).padStart(2, '0')}:${minute} ${ampm}`;
+  }
+
+  // Decimal Excel time fraction
+  if (/^0\.\d+$/.test(str)) {
+    const totalSeconds = Math.round(parseFloat(str) * 24 * 3600);
+    let hour = Math.floor(totalSeconds / 3600);
+    const minute = Math.floor((totalSeconds % 3600) / 60);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    hour = hour % 12;
+    if (hour === 0) hour = 12;
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')} ${ampm}`;
+  }
+
+  return str;
+};
+
 interface ExcelMatrixViewProps {
   rows: ExcelInsumoRow[];
   onRowsChange: (rows: ExcelInsumoRow[]) => void;
@@ -241,19 +367,53 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
       return false;
     }
 
+    // Determinar delimitador (tabulador \t, punto y coma ;, o coma ,)
+    const firstLine = rawLines[0];
+    const delimiter = firstLine.includes('\t') ? '\t' : (firstLine.includes(';') ? ';' : ',');
+
     // Comprobar si la primera fila corresponde a encabezados de columna
     let startIndex = 0;
-    const firstLineUpper = rawLines[0].toUpperCase();
+    const firstLineUpper = firstLine.toUpperCase();
     const isHeader = (
-      (firstLineUpper.includes('OT') && firstLineUpper.includes('OPJ')) ||
+      firstLineUpper.includes('OT') ||
+      firstLineUpper.includes('OPJ') ||
       firstLineUpper.includes('NUNC') ||
       firstLineUpper.includes('NOMBRE') ||
       firstLineUpper.includes('CEDULA') ||
-      firstLineUpper.includes('FISCAL')
+      firstLineUpper.includes('FISCAL') ||
+      firstLineUpper.includes('FECHA')
     );
+
+    let colMap = {
+      ot: 0,
+      opj: 1,
+      nunc: 2,
+      fiscal: 3,
+      nombre: 4,
+      cedula: 5,
+      direccion: 6,
+      telefono: 7,
+      correo: 8,
+      fecha: 9,
+      hora: 10
+    };
 
     if (isHeader) {
       startIndex = 1;
+      const headerCols = firstLine.split(delimiter).map(c => c.trim().toUpperCase());
+      headerCols.forEach((h, idx) => {
+        if (h.includes('OT') || h.includes('ORDEN TRABAJO') || h.includes('ORDEN DE TRABAJO')) colMap.ot = idx;
+        else if (h.includes('OPJ') || h.includes('POLICIA')) colMap.opj = idx;
+        else if (h.includes('NUNC') || h.includes('NOTICIA') || h.includes('SPOA') || h.includes('RADICADO')) colMap.nunc = idx;
+        else if (h.includes('FISCAL') || h.includes('DESPACHO') || h.includes('UNIDAD')) colMap.fiscal = idx;
+        else if (h.includes('NOMBRE') || h.includes('CITADO') || h.includes('PERSONA') || h.includes('PARTICIPANTE')) colMap.nombre = idx;
+        else if (h.includes('CEDULA') || h.includes('IDENTIFICACION') || h.includes('DOCUMENTO') || h.includes('CC') || h.includes('C.C')) colMap.cedula = idx;
+        else if (h.includes('DIRECCION') || h.includes('DOMICILIO') || h.includes('RESIDENCIA') || h.includes('UBICACION')) colMap.direccion = idx;
+        else if (h.includes('TELEFONO') || h.includes('CELULAR') || h.includes('WHATSAPP') || h.includes('TEL') || h.includes('MOVIL')) colMap.telefono = idx;
+        else if (h.includes('CORREO') || h.includes('EMAIL') || h.includes('E-MAIL') || h.includes('MAIL')) colMap.correo = idx;
+        else if (h.includes('FECHA') || h.includes('DIA') || h.includes('CITACION') || h.includes('AUDIENCIA') || h.includes('ENTREVISTA')) colMap.fecha = idx;
+        else if (h.includes('HORA') || h.includes('HORARIO') || h.includes('TIEMPO')) colMap.hora = idx;
+      });
     }
 
     if (startIndex >= rawLines.length) {
@@ -276,38 +436,51 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
       const line = rawLines[i];
       const rowDisplayNum = i + 1;
 
-      let cols = line.split('\t');
-      if (cols.length === 1 && line.includes(';')) {
-        cols = line.split(';');
-      }
+      let cols = line.split(delimiter);
+      if (cols.length === 1 && line.includes('\t')) cols = line.split('\t');
+      else if (cols.length === 1 && line.includes(';')) cols = line.split(';');
 
       // Si la fila está totalmente vacía, se ignora
       if (cols.every(c => !c.trim())) {
         continue;
       }
 
-      // VALIDACIÓN ESTRICTA DE ESTRUCTURA: Exigir exactamente las 11 columnas
-      if (cols.length < REQUIRED_COLUMNS_COUNT) {
-        structuralError = `La fila ${rowDisplayNum} contiene solo ${cols.length} columna(s). Se requieren exactamente las ${REQUIRED_COLUMNS_COUNT} columnas reglamentarias de la tabla.`;
+      // Si tiene menos de 5 columnas, no es una fila estructurada válida
+      if (cols.length < 5) {
+        structuralError = `La fila ${rowDisplayNum} contiene solo ${cols.length} columna(s). Se requieren las columnas de la tabla judicial.`;
         break;
       }
 
-      const ot = cols[0]?.trim() || '';
-      const opj = cols[1]?.trim() || '';
-      const nunc = cols[2]?.trim() || '';
-      const fiscal = cols[3]?.trim() || '17 Local';
-      const nombre = cols[4]?.trim() || '';
-      const cedula = cols[5]?.trim() || '';
-      const direccion = cols[6]?.trim() || '';
-      const telefono = cols[7]?.trim() || '';
-      const correo = cols[8]?.trim() || '';
-      const fecha = cols[9]?.trim() || new Date().toISOString().split('T')[0];
-      const hora = cols[10]?.trim() || '08:30 AM';
+      const getCol = (idx: number) => (cols[idx] !== undefined ? String(cols[idx]).trim() : '');
+
+      const ot = getCol(colMap.ot);
+      const opj = getCol(colMap.opj);
+      const nunc = getCol(colMap.nunc);
+      const fiscal = getCol(colMap.fiscal) || '17 Local';
+      const nombre = getCol(colMap.nombre);
+      const cedula = getCol(colMap.cedula);
+      const direccion = getCol(colMap.direccion);
+      const telefono = getCol(colMap.telefono);
+      const correo = getCol(colMap.correo);
+      const rawFecha = getCol(colMap.fecha);
+      const rawHora = getCol(colMap.hora);
 
       // Verificar que no sea una fila fantasma o sin ningún identificador
       if (!nombre && !opj && !ot && !nunc && !cedula) {
         structuralError = `La fila ${rowDisplayNum} no contiene ningún identificador esencial de citación (Nombre, OPJ, NUNC, OT o Cédula vacíos).`;
         break;
+      }
+
+      // Parsear fecha y hora de forma robusta a formato ISO YYYY-MM-DD y HH:MM AM/PM
+      const fecha = parseExcelDate(rawFecha);
+      
+      // Si la hora está en la fecha (ej: 25/03/2026 09:30) y rawHora está vacía, intentar extraerla
+      let hora = rawHora ? parseExcelTime(rawHora) : '08:30 AM';
+      if (!rawHora && rawFecha && /\d{1,2}:\d{2}/.test(rawFecha)) {
+        const timeExtract = rawFecha.match(/\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:AM|PM|am|pm))?/);
+        if (timeExtract) {
+          hora = parseExcelTime(timeExtract[0]);
+        }
       }
 
       newRows.push({
@@ -341,7 +514,7 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
             </p>
             <div style="background-color: #fef2f2; border: 1.5px solid #f87171; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px;">
               <p style="margin: 0; color: #991b1b; font-weight: 700; font-size: 12px;">
-                ✕ ${structuralError || 'No se detectó el formato de 11 columnas continuo.'}
+                ✕ ${structuralError || 'No se detectó el formato de columnas continuo.'}
               </p>
             </div>
             <p style="font-weight: 700; color: #003366; margin: 8px 0 4px 0; font-size: 12px;">
@@ -409,10 +582,10 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
     reader.onload = (evt) => {
       try {
         const bstr = evt.target?.result;
-        const workbook = XLSX.read(bstr, { type: 'binary' });
+        const workbook = XLSX.read(bstr, { type: 'binary', cellDates: true });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const rawJson: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        const rawJson: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false });
 
         if (rawJson.length <= 1) {
           Swal.fire({
@@ -427,22 +600,67 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
           return;
         }
 
-        const dataRows = rawJson.slice(1);
+        let startIndex = 1;
+        const headerRow = rawJson[0] || [];
+        let colMap = {
+          ot: 0,
+          opj: 1,
+          nunc: 2,
+          fiscal: 3,
+          nombre: 4,
+          cedula: 5,
+          direccion: 6,
+          telefono: 7,
+          correo: 8,
+          fecha: 9,
+          hora: 10
+        };
+
+        if (Array.isArray(headerRow) && headerRow.length > 0) {
+          headerRow.forEach((h: any, idx: number) => {
+            const hStr = String(h || '').trim().toUpperCase();
+            if (hStr.includes('OT') || hStr.includes('ORDEN TRABAJO') || hStr.includes('ORDEN DE TRABAJO')) colMap.ot = idx;
+            else if (hStr.includes('OPJ') || hStr.includes('POLICIA')) colMap.opj = idx;
+            else if (hStr.includes('NUNC') || hStr.includes('NOTICIA') || hStr.includes('SPOA') || hStr.includes('RADICADO')) colMap.nunc = idx;
+            else if (hStr.includes('FISCAL') || hStr.includes('DESPACHO') || hStr.includes('UNIDAD')) colMap.fiscal = idx;
+            else if (hStr.includes('NOMBRE') || hStr.includes('CITADO') || hStr.includes('PERSONA') || hStr.includes('PARTICIPANTE')) colMap.nombre = idx;
+            else if (hStr.includes('CEDULA') || hStr.includes('IDENTIFICACION') || hStr.includes('DOCUMENTO') || hStr.includes('CC') || hStr.includes('C.C')) colMap.cedula = idx;
+            else if (hStr.includes('DIRECCION') || hStr.includes('DOMICILIO') || hStr.includes('RESIDENCIA') || hStr.includes('UBICACION')) colMap.direccion = idx;
+            else if (hStr.includes('TELEFONO') || hStr.includes('CELULAR') || hStr.includes('WHATSAPP') || hStr.includes('TEL') || hStr.includes('MOVIL')) colMap.telefono = idx;
+            else if (hStr.includes('CORREO') || hStr.includes('EMAIL') || hStr.includes('E-MAIL') || hStr.includes('MAIL')) colMap.correo = idx;
+            else if (hStr.includes('FECHA') || hStr.includes('DIA') || hStr.includes('CITACION') || hStr.includes('AUDIENCIA') || hStr.includes('ENTREVISTA')) colMap.fecha = idx;
+            else if (hStr.includes('HORA') || hStr.includes('HORARIO') || hStr.includes('TIEMPO')) colMap.hora = idx;
+          });
+        }
+
+        const dataRows = rawJson.slice(startIndex);
 
         const newRows: ExcelInsumoRow[] = dataRows.map((cols: any[], index: number) => {
+          const getCol = (idx: number) => (cols[idx] !== undefined && cols[idx] !== null ? String(cols[idx]).trim() : '');
+          const rawFecha = getCol(colMap.fecha);
+          const rawHora = getCol(colMap.hora);
+
+          let hora = rawHora ? parseExcelTime(rawHora) : '08:30 AM';
+          if (!rawHora && rawFecha && /\d{1,2}:\d{2}/.test(rawFecha)) {
+            const timeExtract = rawFecha.match(/\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:AM|PM|am|pm))?/);
+            if (timeExtract) {
+              hora = parseExcelTime(timeExtract[0]);
+            }
+          }
+
           return {
             id: `row_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 6)}`,
-            ot: cols[0] ? String(cols[0]).trim() : '',
-            opj: cols[1] ? String(cols[1]).trim() : '',
-            nunc: cols[2] ? String(cols[2]).trim() : '',
-            fiscal: cols[3] ? String(cols[3]).trim() : '17 Local',
-            nombre: cols[4] ? String(cols[4]).trim() : '',
-            cedula: cols[5] ? String(cols[5]).trim() : '',
-            direccion: cols[6] ? String(cols[6]).trim() : '',
-            telefono: cols[7] ? String(cols[7]).trim() : '',
-            correo: cols[8] ? String(cols[8]).trim() : '',
-            fecha: cols[9] ? String(cols[9]).trim() : new Date().toISOString().split('T')[0],
-            hora: cols[10] ? String(cols[10]).trim() : '08:30 AM',
+            ot: getCol(colMap.ot),
+            opj: getCol(colMap.opj),
+            nunc: getCol(colMap.nunc),
+            fiscal: getCol(colMap.fiscal) || '17 Local',
+            nombre: getCol(colMap.nombre),
+            cedula: getCol(colMap.cedula),
+            direccion: getCol(colMap.direccion),
+            telefono: getCol(colMap.telefono),
+            correo: getCol(colMap.correo),
+            fecha: parseExcelDate(rawFecha),
+            hora: hora,
             generada: false // Nuevas filas se marcan como pendientes
           };
         }).filter(r => r.nombre || r.opj || r.ot || r.nunc || r.cedula);

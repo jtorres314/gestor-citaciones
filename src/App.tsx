@@ -18,7 +18,7 @@ import { Citacion, CitacionFilters, PageSizeOption, ExcelInsumoRow } from './typ
 import { CitationFilterBar } from './components/CitationFilterBar';
 import { PaginationControls } from './components/PaginationControls';
 import { filterCitations, paginateList, getUniqueFiscales } from './utils/filterUtils';
-import { ExcelMatrixView, SAMPLE_EXCEL_ROWS } from './components/ExcelMatrixView';
+import { ExcelMatrixView, SAMPLE_EXCEL_ROWS, parseExcelDate, parseExcelTime } from './components/ExcelMatrixView';
 
 // Firebase Imports
 import { initializeApp } from 'firebase/app';
@@ -220,7 +220,17 @@ const App = () => {
   const [excelRows, setExcelRows] = useState<ExcelInsumoRow[]>(() => {
     try {
       const saved = localStorage.getItem('sicij_excel_matrix');
-      return saved !== null ? JSON.parse(saved) : SAMPLE_EXCEL_ROWS;
+      if (saved !== null) {
+        const parsed: ExcelInsumoRow[] = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.map(r => ({
+            ...r,
+            fecha: parseExcelDate(r.fecha),
+            hora: parseExcelTime(r.hora)
+          }));
+        }
+      }
+      return SAMPLE_EXCEL_ROWS;
     } catch (e) {
       return SAMPLE_EXCEL_ROWS;
     }
