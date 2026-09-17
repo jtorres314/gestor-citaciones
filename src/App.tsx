@@ -6,12 +6,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Copy, User, Calendar, ClipboardList, FileText, FileCheck, FileX, Building2, 
-  Trash2, Plus, Sparkles, 
+  Trash2, Plus, Sparkles, FileDown, Download, Phone, Mail, MapPin, Briefcase,
   Wand2, BrainCircuit, Loader2, FileUp, X, Check,
   History, Search, ArrowLeft, LogOut, Eye, ArrowUpDown,
-  UserCheck, UserX, UserMinus, CheckCircle, RefreshCw
+  UserCheck, UserX, UserMinus, CheckCircle, RefreshCw, FileCode, PenTool
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { generateFPJ35WordDocument, generateCitationFromTemplate, downloadWordDocument } from './utils/docGenerator';
 
 // Firebase Imports
 import { initializeApp } from 'firebase/app';
@@ -53,11 +54,42 @@ const App = () => {
   const [user, setUser] = useState<any>(null);
   const [activeMode, setActiveMode] = useState<string | null>(null);
 
-  // Configuration States (Investigator Profile)
-  const [config, setConfig] = useState({
-    investigador: "Investigador Judicial",
-    telefono: "3000000000",
-    oficina: "Fiscalía General de la Nación - Unidad de Patrimonio Económico"
+  // Configuration States (Investigator Profile - Section 2 FPJ-35)
+  const [config, setConfig] = useState(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('fgn_investigator_config') : null;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return {
+          investigador: parsed.investigador || "Investigador Judicial",
+          entidadInvestigador: parsed.entidadInvestigador || "CTI / Fiscalía General de la Nación",
+          grupoInvestigador: parsed.grupoInvestigador || "Unidad de Patrimonio Económico",
+          correoInvestigador: parsed.correoInvestigador || "contacto.investigacion@fiscalia.gov.co",
+          telefono: parsed.telefono || "3000000000",
+          oficina: parsed.oficina || "Fiscalía General de la Nación - Unidad de Patrimonio Económico",
+          departamento: parsed.departamento || "Bolívar",
+          municipio: parsed.municipio || "Cartagena",
+          instalaciones: parsed.instalaciones || "Fiscalía General de la Nación - Sede Canapote",
+          direccionInstalaciones: parsed.direccionInstalaciones || "Cra. 17 # 32-10, Barrio Canapote",
+          firmaInvestigador: parsed.firmaInvestigador || ""
+        };
+      } catch (e) {
+        console.error("Error cargando configuración guardada:", e);
+      }
+    }
+    return {
+      investigador: "Investigador Judicial",
+      entidadInvestigador: "CTI / Fiscalía General de la Nación",
+      grupoInvestigador: "Unidad de Patrimonio Económico",
+      correoInvestigador: "contacto.investigacion@fiscalia.gov.co",
+      telefono: "3000000000",
+      oficina: "Fiscalía General de la Nación - Unidad de Patrimonio Económico",
+      departamento: "Bolívar",
+      municipio: "Cartagena",
+      instalaciones: "Fiscalía General de la Nación - Sede Canapote",
+      direccionInstalaciones: "Cra. 17 # 32-10, Barrio Canapote",
+      firmaInvestigador: ""
+    };
   });
 
   // Data States
@@ -65,10 +97,36 @@ const App = () => {
   const [citados, setCitados] = useState<any[]>([]); // CITADOS
   const [historial, setHistorial] = useState<any[]>([]); // ARCHIVO HISTÓRICO
   const [hasInitializedPendientes, setHasInitializedPendientes] = useState(false);
+  const DEFAULT_OBSERVACIONES = "Presentar documento de identidad original y documentos que demuestren el detrimento patrimonial ocacionado en los hechos denunciados.";
+
+  const getTodayDateStr = () => new Date().toISOString().split('T')[0];
+  const getCurrentTimeStr = () => {
+    const now = new Date();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
+
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'fecha', direction: 'asc' });
   const [nuevoDato, setNuevoDato] = useState({ 
-    nombre: '', genero: 'Femenino', fecha: '', hora: '', orden: '', fiscal: '17 Local', unidad: 'Hurtos de la Ciudad de Cartagena' 
+    nombre: '', 
+    identificacion: '',
+    genero: 'Femenino', 
+    direccion: '',
+    correo: '',
+    telefono: '',
+    nunc: '',
+    orden: '', 
+    fecha: getTodayDateStr(), 
+    hora: getCurrentTimeStr(), 
+    fiscal: '17 Local', 
+    motivo: 'Entrevista',
+    requiereAbogado: 'NO',
+    observaciones: DEFAULT_OBSERVACIONES
   });
+
+  // UI Modal Tab
+  const [modalTab, setModalTab] = useState<'fpj35' | 'whatsapp'>('fpj35');
 
   // AI & File States
   const [rawText, setRawText] = useState("");
@@ -78,7 +136,9 @@ const App = () => {
   const [copiadoIdx, setCopiadoIdx] = useState<string | number | null>(null);
   const [selectedCitation, setSelectedCitation] = useState<any>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [customTemplateBuffer, setCustomTemplateBuffer] = useState<ArrayBuffer | undefined>(undefined);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -126,13 +186,20 @@ const App = () => {
       if (u) {
         setUser(u);
         
-        // Load Profile from Firestore
+        // Load Profile from Firestore & Sync with localStorage
         try {
           const userDoc = await getDocFromServer(doc(db, 'users', u.uid));
           if (userDoc.exists() && userDoc.data().config) {
-            setConfig(userDoc.data().config);
+            const remoteConfig = userDoc.data().config;
+            setConfig(prev => {
+              const merged = { ...prev, ...remoteConfig };
+              try {
+                localStorage.setItem('fgn_investigator_config', JSON.stringify(merged));
+              } catch (err) {}
+              return merged;
+            });
           } else {
-            // Initial save of default config
+            // Initial save of local config to Firestore
             await setDoc(doc(db, 'users', u.uid), {
               lastSeen: new Date().toISOString(),
               email: u.email || 'anonymous',
@@ -184,18 +251,24 @@ const App = () => {
     }
   };
 
-  // Persist Profile Changes
+  // Persist Profile Changes (localStorage + Firestore)
   useEffect(() => {
+    try {
+      localStorage.setItem('fgn_investigator_config', JSON.stringify(config));
+    } catch (e) {
+      console.error("Error saving profile to localStorage:", e);
+    }
+
     if (!user) return;
     const saveConfig = async () => {
       try {
         await setDoc(doc(db, 'users', user.uid), { config }, { merge: true });
       } catch (e) {
-        console.error("Error saving profile:", e);
+        console.error("Error saving profile to Firestore:", e);
       }
     };
 
-    const timeout = setTimeout(saveConfig, 1000);
+    const timeout = setTimeout(saveConfig, 500);
     return () => clearTimeout(timeout);
   }, [config, user]);
 
@@ -262,13 +335,27 @@ const App = () => {
     if (!user) return;
     
     try {
+      const todayDate = data.fecha || getTodayDateStr();
+      const todayTime = data.hora || getCurrentTimeStr();
+
       const item = { 
         ...data, 
+        fecha: todayDate,
+        hora: todayTime,
+        fechaExpedicion: data.fechaExpedicion || todayDate,
+        horaExpedicion: data.horaExpedicion || todayTime,
         estado: 'pendiente', // Default status
-        // Capture profile at creation time
+        // Capture full Section 2 profile at creation time
         investigador_creador: config.investigador,
+        entidadInvestigador: config.entidadInvestigador,
+        grupoInvestigador: config.grupoInvestigador,
+        correoInvestigador: config.correoInvestigador,
         telefono_creador: config.telefono,
         oficina_creador: config.oficina,
+        departamento: config.departamento,
+        municipio: config.municipio,
+        instalaciones: data.instalaciones || config.instalaciones,
+        direccionInstalaciones: data.direccionInstalaciones || config.direccionInstalaciones,
         creadoEl: new Date().toLocaleString('es-CO'),
         creadoTimestamp: Date.now()
       };
@@ -297,7 +384,7 @@ const App = () => {
           model: "gemini-3-flash-preview",
           contents: {
             parts: [
-              { text: "Analiza esta Orden a la Policía Judicial en PDF. Extrae los siguientes datos en formato JSON puro (sin bloques de código markdown): { nombre, genero (Femenino o Masculino), orden (número de orden), fiscal (solo el número y la palabra 'Local', ej: '17 Local'), unidad (limpia el nombre comercial o técnico, ej: 'Hurtos de la Ciudad de Cartagena') }." },
+              { text: "Analiza esta Orden a la Policía Judicial en PDF. Extrae los siguientes datos en formato JSON puro (sin bloques de código markdown): { nunc (Noticia Criminal de 21 dígitos si la encuentras), orden (número de orden OPJ/OT/Caso), nombre (nombre completo del citado/victima/testigo/imputado), identificacion (número de cedula/documento si está), genero (Femenino o Masculino), direccion (residencia/notificacion), correo, telefono, ciudad, fiscal (ej: '17 Local'), unidad (ej: 'Patrimonio Económico' o 'Hurtos'), instalaciones (lugar de comparecencia si se indica), motivo, requiereAbogado ('SI' o 'NO'), observaciones }." },
               { inlineData: { mimeType: "application/pdf", data: base64 } }
             ]
           },
@@ -307,7 +394,26 @@ const App = () => {
         });
 
         const parsed = JSON.parse(response.text);
-        setPendingExtraction({ ...parsed, fecha: '', hora: '' });
+        setPendingExtraction({ 
+          nunc: parsed.nunc || '',
+          orden: parsed.orden || '',
+          nombre: parsed.nombre || '',
+          identificacion: parsed.identificacion || '',
+          genero: parsed.genero || 'Femenino',
+          direccion: parsed.direccion || '',
+          correo: parsed.correo || '',
+          telefono: parsed.telefono || '',
+          ciudad: config.municipio,
+          fiscal: parsed.fiscal || '17 Local',
+          unidad: config.grupoInvestigador,
+          instalaciones: config.instalaciones,
+          direccionInstalaciones: config.direccionInstalaciones,
+          motivo: parsed.motivo === 'Interrogatorio' ? 'Interrogatorio' : 'Entrevista',
+          requiereAbogado: parsed.requiereAbogado || 'NO',
+          observaciones: DEFAULT_OBSERVACIONES,
+          fecha: parsed.fecha || getTodayDateStr(), 
+          hora: parsed.hora || getCurrentTimeStr() 
+        });
       } catch (err) {
         console.error("Error analyzing PDF:", err);
       } finally {
@@ -401,10 +507,123 @@ const App = () => {
     }
   };
 
+  const handleDownloadWord = async (item: any) => {
+    try {
+      const docData = {
+        nunc: item.nunc || item.orden || '',
+        orden: item.orden || '',
+        departamento: item.departamento || config.departamento || "Bolívar",
+        municipio: item.municipio || config.municipio || "Cartagena",
+        fechaExpedicion: item.fechaExpedicion || new Date().toISOString().split('T')[0],
+        horaExpedicion: item.horaExpedicion || "08:00",
+        
+        nombre: item.nombre || "CIUDADANO CITADO",
+        identificacion: item.identificacion || "",
+        genero: item.genero || "Femenino",
+        direccion: item.direccion || "",
+        correo: item.correo || "",
+        ciudad: item.ciudad || item.municipio || config.municipio || "Cartagena",
+        telefono: item.telefono || "",
+
+        fecha: item.fecha || "",
+        hora: item.hora || "",
+        instalaciones: config.instalaciones || item.instalaciones || item.oficina_creador || config.oficina || "Fiscalía General de la Nación",
+        direccionInstalaciones: config.direccionInstalaciones || item.direccionInstalaciones || "Sede Canapote",
+        motivo: item.motivo || "Entrevista",
+        requiereAbogado: item.requiereAbogado || "NO",
+        observaciones: item.observaciones || DEFAULT_OBSERVACIONES,
+
+        fiscal: item.fiscal || "17 Local",
+        unidad: item.grupoInvestigador || item.unidad || config.grupoInvestigador || "Unidad de Patrimonio Económico",
+
+        investigador: item.investigador_creador || config.investigador || "Investigador Judicial",
+        entidadInvestigador: item.entidadInvestigador || config.entidadInvestigador || "CTI / Fiscalía General de la Nación",
+        grupoInvestigador: item.grupoInvestigador || item.unidad || config.grupoInvestigador || "Unidad de Patrimonio Económico",
+        correoInvestigador: item.correoInvestigador || config.correoInvestigador || "contacto@fiscalia.gov.co",
+        telefonoInvestigador: item.telefono_creador || config.telefono || "3000000000",
+        firmaInvestigador: config.firmaInvestigador || ""
+      };
+
+      const blob = await generateCitationFromTemplate(docData, customTemplateBuffer);
+      const cleanName = (item.nombre || 'Citado').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `PLANTILLA_CITACION_${cleanName}_${item.orden || 'SinOrden'}.docx`;
+      downloadWordDocument(blob, filename);
+    } catch (err) {
+      console.error("Error al generar el documento de Word:", err);
+      alert("Error al generar el archivo Word.");
+    }
+  };
+
+  const handleSignatureUpload = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      alert("Por favor seleccione un archivo de imagen válido (PNG, JPG o WEBP).");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const rawDataUrl = evt.target?.result as string;
+      if (!rawDataUrl) return;
+
+      const img = new Image();
+      img.onload = () => {
+        const maxWidth = 600;
+        const maxHeight = 300;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const optimizedUrl = canvas.toDataURL('image/png');
+          setConfig((prev: any) => ({ ...prev, firmaInvestigador: optimizedUrl }));
+        } else {
+          setConfig((prev: any) => ({ ...prev, firmaInvestigador: rawDataUrl }));
+        }
+      };
+      img.onerror = () => {
+        setConfig((prev: any) => ({ ...prev, firmaInvestigador: rawDataUrl }));
+      };
+      img.src = rawDataUrl;
+    };
+    reader.readAsDataURL(file);
+  };
+
   const agregarPersonaManual = () => {
-    if (nuevoDato.nombre && nuevoDato.orden && nuevoDato.fecha && nuevoDato.hora) {
-      registrarCitacion(nuevoDato);
-      setNuevoDato({ ...nuevoDato, nombre: '', orden: '', fecha: '', hora: '' });
+    if (nuevoDato.nombre && nuevoDato.orden) {
+      registrarCitacion({
+        ...nuevoDato,
+        fecha: nuevoDato.fecha || getTodayDateStr(),
+        hora: nuevoDato.hora || getCurrentTimeStr(),
+        ciudad: config.municipio,
+        unidad: config.grupoInvestigador,
+        instalaciones: config.instalaciones,
+        direccionInstalaciones: config.direccionInstalaciones,
+      });
+      setNuevoDato({ 
+        nombre: '', 
+        identificacion: '',
+        genero: 'Femenino', 
+        direccion: '',
+        correo: '',
+        telefono: '',
+        nunc: '',
+        orden: '', 
+        fecha: getTodayDateStr(), 
+        hora: getCurrentTimeStr(),
+        fiscal: '17 Local',
+        motivo: 'Entrevista',
+        requiereAbogado: 'NO',
+        observaciones: DEFAULT_OBSERVACIONES
+      });
     }
   };
 
@@ -498,7 +717,7 @@ const App = () => {
   };
 
   const generarMensaje = (p: any) => {
-    const trato = p.genero === "Femenino" ? "Señora" : "Señor";
+    const trato = p.genero === "Femenino" ? "Señora" : p.genero === "Masculino" ? "Señor" : "Señor(a)";
     const fechaFormateada = formatDateES(p.fecha);
     const horaFormateada = formatTimeAMPM(p.hora);
     
@@ -507,7 +726,11 @@ const App = () => {
     const telefono = p.telefono_creador || config.telefono;
     const investigador = p.investigador_creador || config.investigador;
 
-    return `Buenas ${trato} ${p.nombre.toUpperCase()}, este mensaje es con el fin de realizarle citación para el día ${fechaFormateada} a las ${horaFormateada} en la ${oficina}, a diligencia de entrevista ordenada por el Fiscal ${p.fiscal} de la Unidad de ${p.unidad} dentro de la Orden a Policía judicial No. ${p.orden}.
+    const nombreFormateado = p.identificacion && p.identificacion.trim()
+      ? `${p.nombre.toUpperCase()} con CC ${p.identificacion.trim()}`
+      : p.nombre.toUpperCase();
+
+    return `Buenas ${trato} ${nombreFormateado}, este mensaje es con el fin de realizarle citación para el día ${fechaFormateada} a las ${horaFormateada} en la ${oficina}, a diligencia de entrevista ordenada por el Fiscal ${p.fiscal} de la Unidad de ${p.unidad} dentro de la Orden a Policía judicial No. ${p.orden}.
 
 Esta diligencia se requiere para que usted amplié las circunstancias de tiempo, modo y lugar, en la que ocurrieron los hechos en los que usted resulto como victima, y se requiere que por favor traiga los documentos que acrediten la cuantía de las totalidad del dinero hurtado.
 
@@ -588,42 +811,469 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
       <AnimatePresence>
         {(loadingIA || !user) && <LoadingOverlay />}
         {isModalOpen && selectedCitation && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-xl shadow-2xl max-w-2xl w-full border border-fgn-border overflow-hidden"
+              className="bg-white rounded-xl shadow-2xl max-w-3xl w-full border border-fgn-border overflow-hidden flex flex-col max-h-[90vh]"
             >
               <div className="bg-fgn-blue text-white px-6 py-4 flex justify-between items-center border-b-4 border-fgn-gold">
-                <h3 className="text-sm font-bold uppercase tracking-widest flex items-center gap-2">
-                  <FileText size={18} /> Vista Previa de Citación
-                </h3>
-                <button onClick={() => setIsModalOpen(false)} className="hover:bg-white/10 p-1 rounded-full transition-colors">
+                <div className="flex items-center gap-3">
+                  <FileText size={20} className="text-fgn-gold" />
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-widest">
+                      Detalle de Citación • {selectedCitation.nombre}
+                    </h3>
+                    <p className="text-[9px] text-slate-300 font-mono">
+                      Orden OPJ: {selectedCitation.orden || 'Sin Orden'} | NUNC: {selectedCitation.nunc || '---'}
+                    </p>
+                  </div>
+                </div>
+                <button onClick={() => setIsModalOpen(false)} className="hover:bg-white/10 p-1.5 rounded-full transition-colors text-white">
                   <X size={20} />
                 </button>
               </div>
-              <div className="p-8">
-                <div className="bg-bg-gray p-6 rounded border border-fgn-border shadow-inner max-h-[60vh] overflow-y-auto">
-                   <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-text-main">
+
+              {/* TABS SELECTOR */}
+              <div className="bg-bg-gray px-6 pt-3 pb-0 border-b border-fgn-border flex gap-2">
+                <button 
+                  onClick={() => setModalTab('fpj35')}
+                  className={`px-4 py-2.5 rounded-t font-bold text-[10px] tracking-wider uppercase flex items-center gap-2 border-t border-x transition-all ${modalTab === 'fpj35' ? 'bg-white text-fgn-blue border-fgn-border border-b-white -mb-px shadow-sm' : 'text-text-muted hover:text-fgn-blue border-transparent'}`}
+                >
+                  <FileCode size={14} /> Formato Oficial FPJ-35
+                </button>
+                <button 
+                  onClick={() => setModalTab('whatsapp')}
+                  className={`px-4 py-2.5 rounded-t font-bold text-[10px] tracking-wider uppercase flex items-center gap-2 border-t border-x transition-all ${modalTab === 'whatsapp' ? 'bg-white text-fgn-blue border-fgn-border border-b-white -mb-px shadow-sm' : 'text-text-muted hover:text-fgn-blue border-transparent'}`}
+                >
+                  <Copy size={14} /> Mensaje Texto / WhatsApp
+                </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto flex-1">
+                {modalTab === 'fpj35' ? (
+                  <div className="bg-white border border-fgn-border p-6 rounded-lg space-y-6 text-xs text-text-main shadow-inner font-sans">
+                    {/* ENCABEZADO SIMULADO FPJ-35 */}
+                    <div className="border border-slate-300 rounded overflow-hidden">
+                      <div className="bg-fgn-blue text-white p-3 text-center border-b border-slate-300">
+                        <p className="font-bold text-[11px] uppercase tracking-widest">FISCALÍA GENERAL DE LA NACIÓN</p>
+                        <p className="text-[9px] text-fgn-gold uppercase font-semibold">POLICÍA JUDICIAL • FORMATO CITACIÓN (FPJ-35)</p>
+                      </div>
+
+                      {/* TABLA NUNC */}
+                      <div className="p-3 bg-slate-50 border-b border-slate-200 grid grid-cols-12 gap-2 text-[10px]">
+                        <div className="col-span-12 md:col-span-8">
+                          <span className="font-bold text-slate-500 uppercase block">NUNC (21 dígitos):</span>
+                          <span className="font-mono font-bold text-fgn-blue text-xs">{selectedCitation.nunc || selectedCitation.orden || '---------------------'}</span>
+                        </div>
+                        <div className="col-span-6 md:col-span-2">
+                          <span className="font-bold text-slate-500 uppercase block">Dpto / Mpio:</span>
+                          <span className="font-bold">{selectedCitation.ciudad || config.municipio || 'Cartagena'}</span>
+                        </div>
+                        <div className="col-span-6 md:col-span-2">
+                          <span className="font-bold text-slate-500 uppercase block">Fecha / Hora:</span>
+                          <span className="font-mono font-bold text-slate-700">{selectedCitation.fecha || '---'} {selectedCitation.hora ? formatTimeAMPM(selectedCitation.hora) : ''}</span>
+                        </div>
+                      </div>
+
+                      {/* DATOS DESTINATARIO */}
+                      <div className="p-4 space-y-3">
+                        <p className="font-bold text-fgn-blue text-[10px] uppercase border-b pb-1">1. DATOS DEL DESTINATARIO (CITADO)</p>
+                        <div className="grid grid-cols-12 gap-3 text-[11px]">
+                          <div className="col-span-12">
+                            <span className="text-slate-500 font-medium">Señor(a):</span> <strong className="uppercase text-fgn-blue">{selectedCitation.nombre}{selectedCitation.identificacion && selectedCitation.identificacion.trim() ? ` con CC ${selectedCitation.identificacion.trim()}` : ''}</strong>
+                          </div>
+                          <div className="col-span-8">
+                            <span className="text-slate-500 font-medium">Dirección:</span> <span>{selectedCitation.direccion || 'Dirección de residencia no especificada'}</span>
+                          </div>
+                          <div className="col-span-4">
+                            <span className="text-slate-500 font-medium">Teléfono:</span> <span>{selectedCitation.telefono || '---'}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* REQUERIMIENTO & CITACION */}
+                      <div className="p-4 bg-slate-50/70 border-t border-slate-200 space-y-3">
+                        <p className="font-bold text-fgn-blue text-[10px] uppercase border-b pb-1">2. MOTIVO Y LUGAR DE COMPARECENCIA</p>
+                        <div className="space-y-2 text-[11px]">
+                          <p>
+                            <span className="text-slate-500 font-medium">Motivo:</span> <span>{selectedCitation.motivo || 'Rendir entrevista dentro de las diligencias investigativas del proceso.'}</span>
+                          </p>
+                          <p>
+                            <span className="text-slate-500 font-medium">Lugar / Sede:</span> <strong>{selectedCitation.instalaciones || selectedCitation.oficina_creador || config.oficina}</strong>
+                          </p>
+                          <p>
+                            <span className="text-slate-500 font-medium">Dirección Sede:</span> <span>{selectedCitation.direccionInstalaciones || config.direccionInstalaciones || 'Sede Principal Canapote / Crespo'}</span>
+                          </p>
+                          <p>
+                            <span className="text-slate-500 font-medium">Despacho Fiscal:</span> <span>Fiscalía {selectedCitation.fiscal || '17 Local'} - Unidad {selectedCitation.unidad || 'Patrimonio Económico'}</span>
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* ASISTENCIA ABOGADO Y OBSERVACIONES */}
+                      <div className="p-4 border-t border-slate-200 grid grid-cols-12 gap-4 text-[11px]">
+                        <div className="col-span-12 md:col-span-4 bg-blue-50 p-3 rounded border border-blue-200">
+                          <span className="font-bold text-[10px] uppercase text-fgn-blue block">¿Requiere Abogado Defensor?</span>
+                          <span className="font-bold text-sm text-fgn-blue">{selectedCitation.requiereAbogado || 'NO'}</span>
+                        </div>
+                        <div className="col-span-12 md:col-span-8 bg-slate-50 p-3 rounded border border-slate-200">
+                          <span className="font-bold text-[10px] uppercase text-slate-500 block">Observaciones:</span>
+                          <p className="text-[10px] text-slate-700">{selectedCitation.observaciones || 'Presentarse con documento de identidad original.'}</p>
+                        </div>
+                      </div>
+
+                      {/* SERVIDOR PUBLICO */}
+                      <div className="p-4 bg-slate-100 border-t border-slate-200 text-[10px] flex justify-between items-center">
+                        <div>
+                          <p className="font-bold text-fgn-blue uppercase">{selectedCitation.investigador_creador || config.investigador}</p>
+                          <p className="text-slate-500">{selectedCitation.oficina_creador || config.oficina}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-slate-700">Tel: {selectedCitation.telefono_creador || config.telefono}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-bg-gray p-6 rounded border border-fgn-border shadow-inner">
+                    <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-text-main">
                       {generarMensaje(selectedCitation)}
-                   </pre>
-                </div>
-                <div className="mt-8 flex justify-end gap-3">
+                    </pre>
+                  </div>
+                )}
+              </div>
+
+              {/* FOOTER ACTIONS */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-fgn-border flex flex-wrap justify-between items-center gap-3">
+                <button 
+                  onClick={() => handleDownloadWord(selectedCitation)}
+                  className="px-6 py-3 bg-blue-700 hover:bg-blue-900 text-white font-bold rounded text-[10px] tracking-widest uppercase transition-all shadow flex items-center gap-2"
+                >
+                  <FileDown size={16} /> Descargar FPJ-35 (.docx)
+                </button>
+
+                <div className="flex items-center gap-2">
                   <button 
                     onClick={() => copiarAlPortapapeles(generarMensaje(selectedCitation), selectedCitation)}
-                    className={`px-8 py-3 rounded text-[10px] font-bold tracking-widest uppercase transition-all flex items-center gap-2 ${copiadoIdx === (selectedCitation.id || 'modal') ? 'bg-green-600 text-white' : 'bg-fgn-blue text-white hover:bg-black'}`}
+                    className={`px-6 py-3 rounded text-[10px] font-bold tracking-widest uppercase transition-all flex items-center gap-2 ${copiadoIdx === (selectedCitation.id || 'modal') ? 'bg-green-600 text-white' : 'bg-fgn-blue text-white hover:bg-black'}`}
                   >
                     {copiadoIdx === (selectedCitation.id || 'modal') ? <Check size={14} /> : <Copy size={14} />}
-                    {copiadoIdx === (selectedCitation.id || 'modal') ? 'COPIADO' : 'COPIAR CONTENIDO'}
+                    {copiadoIdx === (selectedCitation.id || 'modal') ? 'COPIADO' : 'COPIAR TEXTO'}
                   </button>
                   <button 
                     onClick={() => setIsModalOpen(false)}
-                    className="px-8 py-3 bg-white border border-fgn-border text-text-muted font-bold rounded text-[10px] tracking-widest uppercase hover:bg-slate-50 transition-all"
+                    className="px-6 py-3 bg-white border border-fgn-border text-text-muted font-bold rounded text-[10px] tracking-widest uppercase hover:bg-slate-100 transition-all"
                   >
                     Cerrar
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {isProfileModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-xl shadow-2xl max-w-2xl w-full border border-fgn-border overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="bg-fgn-blue text-white px-6 py-4 flex justify-between items-center border-b-4 border-fgn-gold">
+                <div className="flex items-center gap-3">
+                  <Building2 size={20} className="text-fgn-gold" />
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-widest">
+                      Perfil del Investigador • Configuración Oficial
+                    </h3>
+                    <p className="text-[9px] text-slate-300 font-mono">
+                      Sección 2 FPJ-35 (Persona que Realiza la Citación)
+                    </p>
+                  </div>
+                </div>
+                <button onClick={() => setIsProfileModalOpen(false)} className="hover:bg-white/10 p-1.5 rounded-full transition-colors text-white">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto flex-1 space-y-6">
+                <div className="space-y-4">
+                  <p className="text-xs font-bold text-fgn-blue uppercase tracking-wider flex items-center gap-2 border-l-4 border-fgn-gold pl-2">
+                    <User size={14} /> 2. Persona que Realiza la Citación
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Funcionario (Nombres y Apellidos) *</label>
+                      <input 
+                        className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue" 
+                        placeholder="Ej: Pedro Pérez"
+                        value={config.investigador} 
+                        onChange={(e) => setConfig({...config, investigador: e.target.value})} 
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Entidad Institucional *</label>
+                      <input 
+                        className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue" 
+                        placeholder="Ej: CTI / Fiscalía General de la Nación"
+                        value={config.entidadInvestigador} 
+                        onChange={(e) => setConfig({...config, entidadInvestigador: e.target.value})} 
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Grupo / Unidad Investigativa *</label>
+                      <input 
+                        className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue" 
+                        placeholder="Ej: Unidad de Patrimonio Económico"
+                        value={config.grupoInvestigador} 
+                        onChange={(e) => setConfig({...config, grupoInvestigador: e.target.value})} 
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Correo Electrónico Institucional *</label>
+                      <input 
+                        type="email"
+                        className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue" 
+                        placeholder="contacto@fiscalia.gov.co"
+                        value={config.correoInvestigador} 
+                        onChange={(e) => setConfig({...config, correoInvestigador: e.target.value})} 
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Teléfono Móvil / WhatsApp de Contacto *</label>
+                      <input 
+                        className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue font-mono" 
+                        placeholder="Ej: 3000000000"
+                        value={config.telefono} 
+                        onChange={(e) => setConfig({...config, telefono: e.target.value})} 
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-xs font-bold text-fgn-blue uppercase tracking-wider flex items-center gap-2 border-l-4 border-fgn-gold pl-2 pt-4">
+                    <MapPin size={14} /> Sede de Comparecencia y Ubicación
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Despacho / Unidad de Adscripción</label>
+                      <textarea 
+                        rows={2} 
+                        className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue resize-none" 
+                        placeholder="Fiscalía General de la Nación - Unidad de Patrimonio Económico"
+                        value={config.oficina} 
+                        onChange={(e) => setConfig({...config, oficina: e.target.value})} 
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Lugar / Sede de Comparecencia</label>
+                      <input 
+                        className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue" 
+                        placeholder="Fiscalía General de la Nación - Sede Canapote"
+                        value={config.instalaciones} 
+                        onChange={(e) => setConfig({...config, instalaciones: e.target.value})} 
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Dirección de las Instalaciones</label>
+                      <input 
+                        className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue" 
+                        placeholder="Cra. 17 # 32-10, Barrio Canapote"
+                        value={config.direccionInstalaciones} 
+                        onChange={(e) => setConfig({...config, direccionInstalaciones: e.target.value})} 
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Departamento</label>
+                      <input 
+                        className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold outline-none focus:border-fgn-blue" 
+                        placeholder="Bolívar"
+                        value={config.departamento} 
+                        onChange={(e) => setConfig({...config, departamento: e.target.value})} 
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Municipio / Ciudad</label>
+                      <input 
+                        className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold outline-none focus:border-fgn-blue" 
+                        placeholder="Cartagena"
+                        value={config.municipio} 
+                        onChange={(e) => setConfig({...config, municipio: e.target.value})} 
+                      />
+                    </div>
+
+                    {/* Firma Gráfica del Investigador */}
+                    <div className="bg-slate-50 border border-fgn-border rounded-lg p-3.5 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="text-[10px] font-bold text-fgn-blue uppercase tracking-wider flex items-center gap-1.5">
+                            <PenTool size={13} className="text-fgn-gold" /> Firma Digitalizada del Investigador
+                          </label>
+                          <p className="text-[10px] text-slate-500 mt-0.5">
+                            Clave para la plantilla Word: <span className="font-mono font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">&#123;FIRMA&#125;</span>
+                          </p>
+                        </div>
+                        {config.firmaInvestigador && (
+                          <button
+                            type="button"
+                            onClick={() => setConfig((prev: any) => ({ ...prev, firmaInvestigador: "" }))}
+                            className="text-[10px] text-red-600 hover:text-red-800 font-bold flex items-center gap-1 hover:underline cursor-pointer"
+                          >
+                            <Trash2 size={12} /> Eliminar firma
+                          </button>
+                        )}
+                      </div>
+
+                      {config.firmaInvestigador ? (
+                        <div className="flex flex-col sm:flex-row items-center gap-3 bg-white p-3 rounded-lg border border-slate-200">
+                          <div className="h-16 w-44 bg-slate-50 border border-dashed border-slate-300 rounded flex items-center justify-center p-1.5 overflow-hidden">
+                            <img 
+                              src={config.firmaInvestigador} 
+                              alt="Firma del Investigador" 
+                              className="max-h-full max-w-full object-contain" 
+                            />
+                          </div>
+                          <div className="text-[10px] text-slate-600 space-y-1">
+                            <p className="font-semibold text-emerald-700 flex items-center gap-1">
+                              <CheckCircle size={13} /> Firma cargada y lista
+                            </p>
+                            <p className="text-slate-500">
+                              Se estampará en la clave <span className="font-mono font-bold text-slate-700">&#123;FIRMA&#125;</span> de la plantilla y en el FPJ-35.
+                            </p>
+                            <label className="inline-flex items-center gap-1 text-[10px] font-bold text-fgn-blue hover:underline cursor-pointer pt-0.5">
+                              <FileUp size={11} /> Cambiar imagen
+                              <input
+                                type="file"
+                                accept="image/png, image/jpeg, image/jpg, image/webp"
+                                className="hidden"
+                                onChange={(e) => {
+                                  if (e.target.files?.[0]) handleSignatureUpload(e.target.files[0]);
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      ) : (
+                        <label className="border-2 border-dashed border-slate-300 hover:border-fgn-blue bg-white rounded-lg p-3.5 flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-colors group">
+                          <div className="w-8 h-8 rounded-full bg-blue-50 text-fgn-blue flex items-center justify-center group-hover:scale-105 transition-transform">
+                            <FileUp size={15} />
+                          </div>
+                          <div className="text-center">
+                            <span className="text-xs font-bold text-fgn-blue block">Subir imagen de la firma</span>
+                            <span className="text-[9px] text-slate-500 block">PNG con fondo transparente recomendado (o JPG)</span>
+                          </div>
+                          <input
+                            type="file"
+                            accept="image/png, image/jpeg, image/jpg, image/webp"
+                            className="hidden"
+                            onChange={(e) => {
+                              if (e.target.files?.[0]) handleSignatureUpload(e.target.files[0]);
+                            }}
+                          />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-xs font-bold text-fgn-blue uppercase tracking-wider flex items-center gap-2 border-l-4 border-fgn-gold pl-2 pt-4">
+                    <FileCode size={14} /> Plantilla Oficial Word (PLANTILLA CITACION.docx)
+                  </p>
+
+                  <div className="bg-slate-50 border border-fgn-border p-4 rounded-lg space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-bold text-slate-800">Estado de la Plantilla:</p>
+                        <p className="text-[10px] text-slate-600 font-mono">
+                          {customTemplateBuffer ? "✓ Usando Plantilla Personalizada cargada por el usuario" : "✓ Usando Plantilla Oficial predeterminada (PLANTILLA CITACION.docx)"}
+                        </p>
+                      </div>
+                      {customTemplateBuffer && (
+                        <button 
+                          onClick={() => setCustomTemplateBuffer(undefined)}
+                          className="text-[10px] text-red-600 font-bold hover:underline"
+                        >
+                          Restablecer a Original
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap gap-3 pt-1">
+                      <a 
+                        href="/PLANTILLA CITACION.docx" 
+                        download="PLANTILLA CITACION.docx"
+                        className="px-3 py-2 bg-white border border-fgn-border text-fgn-blue font-bold rounded text-[10px] uppercase tracking-wider hover:bg-fgn-blue hover:text-white transition-all flex items-center gap-1.5 shadow-sm"
+                      >
+                        <Download size={13} /> Descargar Plantilla Base (PLANTILLA CITACION.docx)
+                      </a>
+
+                      <label className="px-3 py-2 bg-fgn-blue text-white font-bold rounded text-[10px] uppercase tracking-wider hover:bg-black transition-all cursor-pointer flex items-center gap-1.5 shadow-sm">
+                        <FileUp size={13} /> Cargar Nueva Plantilla (.docx)
+                        <input 
+                          type="file" 
+                          accept=".docx" 
+                          className="hidden" 
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = (evt) => {
+                                if (evt.target?.result instanceof ArrayBuffer) {
+                                  setCustomTemplateBuffer(evt.target.result);
+                                  alert("✓ Nueva plantilla PLANTILLA CITACION.docx cargada exitosamente.");
+                                }
+                              };
+                              reader.readAsArrayBuffer(file);
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="mt-2 p-3 bg-blue-50/60 border border-blue-200/60 rounded text-[11px] text-slate-700 space-y-1.5">
+                      <p className="font-bold text-fgn-blue flex items-center gap-1.5">
+                        <Check size={12} className="text-fgn-gold" /> Claves unificadas para tu documento Word:
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 font-mono text-[10px]">
+                        <div className="bg-white p-2 rounded border border-blue-100 shadow-2xs">
+                          <strong className="text-fgn-blue font-bold">&#123;NOMBRE&#125;</strong>
+                          <p className="text-slate-600 mt-0.5 font-sans">Engloba el nombre y añade automáticamente <span className="font-semibold">"con CC ..."</span> si existe número de cédula.</p>
+                        </div>
+                        <div className="bg-white p-2 rounded border border-blue-100 shadow-2xs">
+                          <strong className="text-fgn-blue font-bold">&#123;MOTIVO_CITACION&#125;</strong>
+                          <p className="text-slate-600 mt-0.5 font-sans">Engloba todo el párrafo de comparecencia (fecha, hora, sede, dirección y motivo estructurados).</p>
+                        </div>
+                        <div className="bg-white p-2 rounded border border-blue-100 shadow-2xs">
+                          <strong className="text-fgn-blue font-bold">&#123;FIRMA&#125;</strong>
+                          <p className="text-slate-600 mt-0.5 font-sans">Inserta automáticamente la imagen de la firma del funcionario en la celda o párrafo correspondiente.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-6 py-4 bg-slate-50 border-t border-fgn-border flex justify-between items-center">
+                <span className="text-[10px] text-slate-500 font-medium flex items-center gap-1">
+                  <Check size={14} className="text-green-600" /> Sincronizado automáticamente con Firebase
+                </span>
+                <button 
+                  onClick={() => setIsProfileModalOpen(false)}
+                  className="px-6 py-2.5 bg-fgn-blue hover:bg-black text-white font-bold rounded text-[10px] tracking-widest uppercase transition-all shadow"
+                >
+                  Guardar y Cerrar
+                </button>
               </div>
             </motion.div>
           </div>
@@ -652,6 +1302,14 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                    <p className="text-[9px] font-bold uppercase text-blue-200 tracking-widest leading-none">Investigador</p>
                    <p className="text-xs font-bold text-white leading-tight truncate max-w-[150px]">{user.displayName || user.email || 'Agente'}</p>
                  </div>
+                 <button 
+                   onClick={() => setIsProfileModalOpen(true)}
+                   className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-bold uppercase tracking-wider border border-white/20 transition-all shadow-sm"
+                   title="Editar Perfil del Investigador (Sección 2 FPJ-35)"
+                 >
+                   <Building2 size={14} className="text-fgn-gold" />
+                   <span className="hidden md:inline">Perfil Investigador</span>
+                 </button>
                  <button 
                   onClick={() => signOut(auth)}
                   className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors"
@@ -814,7 +1472,9 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                       className="px-6 py-4 grid grid-cols-12 gap-4 items-center hover:bg-slate-50 transition-colors"
                     >
                       <div className="col-span-3">
-                        <p className="text-xs font-bold text-fgn-blue uppercase">{p.nombre}</p>
+                        <p className="text-xs font-bold text-fgn-blue uppercase">
+                          {p.nombre}{p.identificacion && p.identificacion.trim() ? ` con CC ${p.identificacion.trim()}` : ''}
+                        </p>
                       </div>
                       <div className="col-span-2 font-mono text-[11px] text-text-muted uppercase">
                         {p.orden}
@@ -867,6 +1527,13 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                           <Eye size={16} />
                         </button>
                         <button 
+                          onClick={() => handleDownloadWord(p)}
+                          className="p-1.5 text-blue-700 hover:bg-blue-50 rounded transition-all"
+                          title="Descargar Formato Word FPJ-35 (.docx)"
+                        >
+                          <FileDown size={16} />
+                        </button>
+                        <button 
                           onClick={() => eliminarDeHistorial(p.id)} 
                           className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-all"
                           title="Eliminar"
@@ -902,38 +1569,200 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                 animate={{ opacity: 1, x: 0 }}
                 className="lg:col-span-4 space-y-6"
               >
-                <div className="bg-white p-6 rounded-xl border border-fgn-border shadow-sm h-full">
-                <h2 className="text-xs font-bold mb-6 flex items-center gap-2 border-b border-fgn-border pb-3 text-fgn-blue uppercase tracking-widest">
-                  <Building2 size={16} /> Perfil Investigador
-                </h2>
-                <div className="space-y-5">
-                  <div>
-                    <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Funcionario</label>
-                    <input 
-                      className="w-full p-3 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue" 
-                      value={config.investigador} 
-                      onChange={(e) => setConfig({...config, investigador: e.target.value})} 
-                    />
+                <div className="bg-white p-6 rounded-xl border border-fgn-border shadow-sm space-y-6">
+                  <div className="border-b border-fgn-border pb-3 flex items-center justify-between">
+                    <h2 className="text-xs font-bold flex items-center gap-2 text-fgn-blue uppercase tracking-widest">
+                      <Building2 size={16} className="text-fgn-gold" /> Perfil Investigador
+                    </h2>
+                    <span className="text-[9px] font-bold text-fgn-blue bg-fgn-blue/10 px-2 py-0.5 rounded border border-fgn-blue/20 uppercase">
+                      Sección 2 FPJ-35
+                    </span>
                   </div>
-                  <div>
-                    <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">WhatsApp / Móvil</label>
-                    <input 
-                      className="w-full p-3 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue" 
-                      value={config.telefono} 
-                      onChange={(e) => setConfig({...config, telefono: e.target.value})} 
-                    />
+
+                  <div className="space-y-4">
+                    <p className="text-[9px] font-bold text-fgn-gold uppercase tracking-wider flex items-center gap-1 border-b pb-1">
+                      <User size={12} /> 2. Persona que Realiza la Citación
+                    </p>
+
+                    <div>
+                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Funcionario (Nombres y Apellidos)</label>
+                      <input 
+                        className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue" 
+                        placeholder="Ej: Pedro Pérez"
+                        value={config.investigador} 
+                        onChange={(e) => setConfig({...config, investigador: e.target.value})} 
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Entidad</label>
+                      <input 
+                        className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue" 
+                        placeholder="Ej: CTI / Fiscalía General de la Nación"
+                        value={config.entidadInvestigador} 
+                        onChange={(e) => setConfig({...config, entidadInvestigador: e.target.value})} 
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Grupo / Unidad Investigativa</label>
+                      <input 
+                        className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue" 
+                        placeholder="Ej: Unidad de Patrimonio Económico"
+                        value={config.grupoInvestigador} 
+                        onChange={(e) => setConfig({...config, grupoInvestigador: e.target.value})} 
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Correo Electrónico Institucional</label>
+                      <input 
+                        type="email"
+                        className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue" 
+                        placeholder="contacto@fiscalia.gov.co"
+                        value={config.correoInvestigador} 
+                        onChange={(e) => setConfig({...config, correoInvestigador: e.target.value})} 
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Teléfono / WhatsApp Móvil</label>
+                      <input 
+                        className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue font-mono" 
+                        placeholder="Ej: 3000000000"
+                        value={config.telefono} 
+                        onChange={(e) => setConfig({...config, telefono: e.target.value})} 
+                      />
+                    </div>
+
+                    <p className="text-[9px] font-bold text-fgn-gold uppercase tracking-wider flex items-center gap-1 border-b pb-1 pt-2">
+                      <MapPin size={12} /> Despacho y Sede de Comparecencia
+                    </p>
+
+                    <div>
+                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Despacho / Unidad</label>
+                      <textarea 
+                        rows={2} 
+                        className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue resize-none" 
+                        placeholder="Fiscalía General de la Nación - Unidad de Patrimonio Económico"
+                        value={config.oficina} 
+                        onChange={(e) => setConfig({...config, oficina: e.target.value})} 
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Lugar / Sede de Comparecencia</label>
+                      <input 
+                        className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue" 
+                        placeholder="Fiscalía General de la Nación - Sede Canapote"
+                        value={config.instalaciones} 
+                        onChange={(e) => setConfig({...config, instalaciones: e.target.value})} 
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Dirección de las Instalaciones</label>
+                      <input 
+                        className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue" 
+                        placeholder="Cra. 17 # 32-10, Barrio Canapote"
+                        value={config.direccionInstalaciones} 
+                        onChange={(e) => setConfig({...config, direccionInstalaciones: e.target.value})} 
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Departamento</label>
+                        <input 
+                          className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold outline-none focus:border-fgn-blue" 
+                          placeholder="Bolívar"
+                          value={config.departamento} 
+                          onChange={(e) => setConfig({...config, departamento: e.target.value})} 
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Municipio / Ciudad</label>
+                        <input 
+                          className="w-full p-2.5 bg-bg-gray border border-fgn-border rounded text-xs font-bold outline-none focus:border-fgn-blue" 
+                          placeholder="Cartagena"
+                          value={config.municipio} 
+                          onChange={(e) => setConfig({...config, municipio: e.target.value})} 
+                        />
+                      </div>
+                    </div>
+
+                    {/* Firma Gráfica del Investigador */}
+                    <div className="pt-2 border-t border-slate-200">
+                      <div className="bg-slate-50 border border-fgn-border rounded-lg p-3 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <label className="text-[10px] font-bold text-fgn-blue uppercase tracking-wider flex items-center gap-1.5">
+                              <PenTool size={13} className="text-fgn-gold" /> Firma Digitalizada
+                            </label>
+                            <p className="text-[9px] text-slate-500 mt-0.5">
+                              Clave plantilla Word: <span className="font-mono font-bold text-blue-700 bg-blue-100 px-1 py-0.5 rounded">&#123;FIRMA&#125;</span>
+                            </p>
+                          </div>
+                          {config.firmaInvestigador && (
+                            <button
+                              type="button"
+                              onClick={() => setConfig((prev: any) => ({ ...prev, firmaInvestigador: "" }))}
+                              className="text-[9px] text-red-600 hover:text-red-800 font-bold flex items-center gap-1 hover:underline cursor-pointer"
+                            >
+                              <Trash2 size={11} /> Eliminar
+                            </button>
+                          )}
+                        </div>
+
+                        {config.firmaInvestigador ? (
+                          <div className="bg-white p-2.5 rounded-lg border border-slate-200 space-y-2">
+                            <div className="h-16 w-full bg-slate-50 border border-dashed border-slate-300 rounded flex items-center justify-center p-1 overflow-hidden">
+                              <img 
+                                src={config.firmaInvestigador} 
+                                alt="Firma del Investigador" 
+                                className="max-h-full max-w-full object-contain" 
+                              />
+                            </div>
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="font-semibold text-emerald-700 flex items-center gap-1">
+                                <CheckCircle size={12} /> Firma lista
+                              </span>
+                              <label className="text-[10px] font-bold text-fgn-blue hover:underline cursor-pointer flex items-center gap-1">
+                                <FileUp size={11} /> Cambiar
+                                <input
+                                  type="file"
+                                  accept="image/png, image/jpeg, image/jpg, image/webp"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    if (e.target.files?.[0]) handleSignatureUpload(e.target.files[0]);
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          </div>
+                        ) : (
+                          <label className="border-2 border-dashed border-slate-300 hover:border-fgn-blue bg-white rounded-lg p-3 flex flex-col items-center justify-center gap-1 cursor-pointer transition-colors group">
+                            <FileUp size={16} className="text-fgn-blue group-hover:scale-105 transition-transform" />
+                            <span className="text-[11px] font-bold text-fgn-blue">Subir imagen de firma</span>
+                            <span className="text-[8px] text-slate-500">PNG transparente o JPG</span>
+                            <input
+                              type="file"
+                              accept="image/png, image/jpeg, image/jpg, image/webp"
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files?.[0]) handleSignatureUpload(e.target.files[0]);
+                              }}
+                            />
+                          </label>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Despacho</label>
-                    <textarea 
-                      rows={2} 
-                      className="w-full p-3 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue resize-none" 
-                      value={config.oficina} 
-                      onChange={(e) => setConfig({...config, oficina: e.target.value})} 
-                    />
+
+                  <div className="bg-slate-50 p-3 rounded border border-slate-200 text-[9px] text-slate-500 font-medium">
+                    ⚡ Sus datos de perfil se guardan automáticamente y se aplican a todas las citaciones generadas y formatos FPJ-35 en Word.
                   </div>
                 </div>
-              </div>
             </motion.div>
 
             {/* CONTENIDO PRINCIPAL DE CADA MODO */}
@@ -986,71 +1815,177 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
               )}
 
               {activeMode === 'manual' && (
-                <div className="bg-white p-8 rounded-xl border border-fgn-border shadow-sm">
-                  <h2 className="text-sm font-bold mb-8 text-fgn-blue uppercase tracking-widest flex items-center gap-3">
-                    <Plus size={20} className="text-fgn-blue" /> Registro de Citación Manual
-                  </h2>
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-                    <div className="md:col-span-8">
-                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Nombre Ciudadano</label>
-                      <input 
-                        className="w-full p-3 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue" 
-                        value={nuevoDato.nombre} 
-                        onChange={(e) => setNuevoDato({...nuevoDato, nombre: e.target.value})} 
-                      />
+                <div className="bg-white p-8 rounded-xl border border-fgn-border shadow-sm space-y-8">
+                  <div className="flex items-center justify-between border-b border-fgn-border pb-4">
+                    <h2 className="text-sm font-bold text-fgn-blue uppercase tracking-widest flex items-center gap-3">
+                      <Plus size={20} className="text-fgn-blue" /> Formulario Oficial de Citación (FPJ-35)
+                    </h2>
+                    <span className="text-[10px] font-bold text-fgn-gold bg-fgn-blue/10 px-3 py-1 rounded border border-fgn-gold/30 uppercase tracking-widest">
+                      Formato Estándar Policía Judicial
+                    </span>
+                  </div>
+
+                  {/* SECCIÓN 1: DATOS DEL CITADO */}
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-bold text-fgn-blue uppercase tracking-wider flex items-center gap-2 border-l-4 border-fgn-gold pl-2">
+                      <User size={14} /> 1. Datos del Destinatario (Citado)
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                      <div className="md:col-span-8">
+                        <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Nombre Completo *</label>
+                        <input 
+                          className="w-full p-3 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue" 
+                          placeholder="NOMBRES Y APELLIDOS"
+                          value={nuevoDato.nombre} 
+                          onChange={(e) => setNuevoDato({...nuevoDato, nombre: e.target.value})} 
+                        />
+                      </div>
+                      <div className="md:col-span-4">
+                        <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Documento / C.C.</label>
+                        <input 
+                          className="w-full p-3 bg-bg-gray border border-fgn-border rounded text-xs font-bold text-text-main outline-none focus:border-fgn-blue" 
+                          placeholder="Ej: 1.047.888.999"
+                          value={nuevoDato.identificacion} 
+                          onChange={(e) => setNuevoDato({...nuevoDato, identificacion: e.target.value})} 
+                        />
+                      </div>
+
+                      <div className="md:col-span-4">
+                        <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Dirección de Residencia</label>
+                        <input 
+                          className="w-full p-3 bg-bg-gray border border-fgn-border rounded text-xs font-bold outline-none focus:border-fgn-blue" 
+                          placeholder="Barrio, Calle, Transversal, Casa"
+                          value={nuevoDato.direccion} 
+                          onChange={(e) => setNuevoDato({...nuevoDato, direccion: e.target.value})} 
+                        />
+                      </div>
+                      <div className="md:col-span-3">
+                        <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Teléfono / Celular</label>
+                        <input 
+                          className="w-full p-3 bg-bg-gray border border-fgn-border rounded text-xs font-bold outline-none focus:border-fgn-blue" 
+                          placeholder="300 000 0000"
+                          value={nuevoDato.telefono} 
+                          onChange={(e) => setNuevoDato({...nuevoDato, telefono: e.target.value})} 
+                        />
+                      </div>
+                      <div className="md:col-span-5">
+                        <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Correo Electrónico</label>
+                        <input 
+                          type="email"
+                          className="w-full p-3 bg-bg-gray border border-fgn-border rounded text-xs font-bold outline-none focus:border-fgn-blue" 
+                          placeholder="correo@ejemplo.com"
+                          value={nuevoDato.correo} 
+                          onChange={(e) => setNuevoDato({...nuevoDato, correo: e.target.value})} 
+                        />
+                      </div>
                     </div>
-                    <div className="md:col-span-4">
-                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Género</label>
-                      <select 
-                        className="w-full p-3 bg-bg-gray border border-fgn-border rounded text-xs font-bold outline-none focus:border-fgn-blue" 
-                        value={nuevoDato.genero} 
-                        onChange={(e) => setNuevoDato({...nuevoDato, genero: e.target.value})}
-                      >
-                        <option value="Femenino">Femenino</option>
-                        <option value="Masculino">Masculino</option>
-                      </select>
+                  </div>
+
+                  {/* SECCIÓN 2: PROCESO PENAL & NOTICIA CRIMINAL */}
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-bold text-fgn-blue uppercase tracking-wider flex items-center gap-2 border-l-4 border-fgn-gold pl-2">
+                      <FileText size={14} /> 2. Proceso Penal & Noticia Criminal (NUNC)
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                      <div className="md:col-span-7">
+                        <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">NUNC (Noticia Criminal - 21 dígitos)</label>
+                        <input 
+                          className="w-full p-3 bg-bg-gray border border-fgn-border rounded font-mono text-xs font-bold text-fgn-blue outline-none focus:border-fgn-blue" 
+                          placeholder="Ej: 130016001128202600123"
+                          maxLength={21}
+                          value={nuevoDato.nunc} 
+                          onChange={(e) => setNuevoDato({...nuevoDato, nunc: e.target.value})} 
+                        />
+                      </div>
+                      <div className="md:col-span-5">
+                        <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">No. Orden OPJ / Caso *</label>
+                        <input 
+                          className="w-full p-3 bg-bg-gray border border-fgn-border rounded font-mono text-xs font-bold outline-none focus:border-fgn-blue" 
+                          placeholder="Ej: OPJ-123-2026"
+                          value={nuevoDato.orden} 
+                          onChange={(e) => setNuevoDato({...nuevoDato, orden: e.target.value})} 
+                        />
+                      </div>
+
+                      <div className="md:col-span-12">
+                        <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Fiscalía Asignada</label>
+                        <input 
+                          placeholder="ej: 17 Local Cartagena" 
+                          className="w-full p-3 bg-bg-gray border border-fgn-border rounded text-xs font-bold outline-none focus:border-fgn-blue" 
+                          value={nuevoDato.fiscal} 
+                          onChange={(e) => setNuevoDato({...nuevoDato, fiscal: e.target.value})} 
+                        />
+                      </div>
                     </div>
-                    <div className="md:col-span-6">
-                      <label className="text-[9px] font-bold text-fgn-blue uppercase tracking-widest mb-1 block">Fecha Entrevista</label>
-                      <input 
-                        type="date" 
-                        className="w-full p-3 bg-bg-gray border border-fgn-border rounded text-xs font-bold outline-none focus:border-fgn-blue" 
-                        value={nuevoDato.fecha} 
-                        onChange={(e) => setNuevoDato({...nuevoDato, fecha: e.target.value})} 
-                      />
+                  </div>
+
+                  {/* SECCIÓN 3: CITACIÓN & REQUERIMIENTO */}
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-bold text-fgn-blue uppercase tracking-wider flex items-center gap-2 border-l-4 border-fgn-gold pl-2">
+                      <Calendar size={14} /> 3. Comparecencia & Objeto de la Cita
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                      <div className="md:col-span-6">
+                        <label className="text-[9px] font-bold text-fgn-blue uppercase tracking-widest mb-1 block">Fecha Comparecencia *</label>
+                        <input 
+                          type="date" 
+                          className="w-full p-3 bg-bg-gray border border-fgn-border rounded text-xs font-bold outline-none focus:border-fgn-blue" 
+                          value={nuevoDato.fecha} 
+                          onChange={(e) => setNuevoDato({...nuevoDato, fecha: e.target.value})} 
+                        />
+                      </div>
+                      <div className="md:col-span-6">
+                        <label className="text-[9px] font-bold text-fgn-blue uppercase tracking-widest mb-1 block">Hora Comparecencia *</label>
+                        <input 
+                          type="time" 
+                          className="w-full p-3 bg-bg-gray border border-fgn-border rounded text-xs font-bold outline-none focus:border-fgn-blue" 
+                          value={nuevoDato.hora} 
+                          onChange={(e) => setNuevoDato({...nuevoDato, hora: e.target.value})} 
+                        />
+                      </div>
+
+                      <div className="md:col-span-8">
+                        <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Motivo / Objeto de la Diligencia</label>
+                        <select 
+                          className="w-full p-3 bg-bg-gray border border-fgn-border rounded text-xs font-bold outline-none focus:border-fgn-blue" 
+                          value={nuevoDato.motivo} 
+                          onChange={(e) => setNuevoDato({...nuevoDato, motivo: e.target.value})}
+                        >
+                          <option value="Entrevista">Entrevista</option>
+                          <option value="Interrogatorio">Interrogatorio</option>
+                        </select>
+                      </div>
+                      <div className="md:col-span-4">
+                        <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">¿Requiere Abogado?</label>
+                        <select 
+                          className="w-full p-3 bg-bg-gray border border-fgn-border rounded text-xs font-bold outline-none focus:border-fgn-blue" 
+                          value={nuevoDato.requiereAbogado} 
+                          onChange={(e) => setNuevoDato({...nuevoDato, requiereAbogado: e.target.value})}
+                        >
+                          <option value="NO">NO</option>
+                          <option value="SI">SI</option>
+                        </select>
+                      </div>
+
+                      <div className="md:col-span-12">
+                        <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Observaciones / Anexos Requeridos</label>
+                        <textarea 
+                          rows={2}
+                          className="w-full p-3 bg-bg-gray border border-fgn-border rounded text-xs font-bold outline-none focus:border-fgn-blue resize-none" 
+                          value={nuevoDato.observaciones} 
+                          onChange={(e) => setNuevoDato({...nuevoDato, observaciones: e.target.value})} 
+                        />
+                      </div>
                     </div>
-                    <div className="md:col-span-6">
-                      <label className="text-[9px] font-bold text-fgn-blue uppercase tracking-widest mb-1 block">Hora Entrevista</label>
-                      <input 
-                        type="time" 
-                        className="w-full p-3 bg-bg-gray border border-fgn-border rounded text-xs font-bold outline-none focus:border-fgn-blue" 
-                        value={nuevoDato.hora} 
-                        onChange={(e) => setNuevoDato({...nuevoDato, hora: e.target.value})} 
-                      />
-                    </div>
-                    <div className="md:col-span-5">
-                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">Fiscalía</label>
-                      <input 
-                        placeholder="ej: 17 Local" 
-                        className="w-full p-3 bg-bg-gray border border-fgn-border rounded text-xs font-bold outline-none focus:border-fgn-blue" 
-                        value={nuevoDato.fiscal} 
-                        onChange={(e) => setNuevoDato({...nuevoDato, fiscal: e.target.value})} 
-                      />
-                    </div>
-                    <div className="md:col-span-7">
-                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block">No. Orden OPJ</label>
-                      <input 
-                        className="w-full p-3 bg-bg-gray border border-fgn-border rounded font-mono text-xs font-bold outline-none focus:border-fgn-blue" 
-                        value={nuevoDato.orden} 
-                        onChange={(e) => setNuevoDato({...nuevoDato, orden: e.target.value})} 
-                      />
-                    </div>
+                  </div>
+
+                  <div className="pt-4 flex gap-4">
                     <button 
                       onClick={agregarPersonaManual} 
-                      disabled={!nuevoDato.nombre || !nuevoDato.orden || !nuevoDato.fecha || !nuevoDato.hora} 
-                      className="md:col-span-12 bg-fgn-blue hover:bg-black disabled:bg-slate-300 text-white font-bold py-4 rounded text-[10px] tracking-[0.2em] uppercase transition-all mt-4"
+                      disabled={!nuevoDato.nombre || !nuevoDato.orden} 
+                      className="flex-1 bg-fgn-blue hover:bg-black disabled:bg-slate-300 text-white font-bold py-4 rounded text-[10px] tracking-[0.2em] uppercase transition-all shadow-md flex items-center justify-center gap-2"
                     >
-                      Registrar en Bandeja
+                      <Plus size={16} /> Registrar Citación en Bandeja
                     </button>
                   </div>
                 </div>
@@ -1224,7 +2159,9 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                         />
                       </div>
                       <div className="col-span-3">
-                        <p className="text-xs font-bold text-fgn-blue uppercase">{p.nombre}</p>
+                        <p className="text-xs font-bold text-fgn-blue uppercase">
+                          {p.nombre}{p.identificacion && p.identificacion.trim() ? ` con CC ${p.identificacion.trim()}` : ''}
+                        </p>
                       </div>
                       <div className="col-span-2 font-mono text-[11px] text-text-muted uppercase">
                         {p.orden}
@@ -1243,6 +2180,13 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                             title="Ver Citación Completa"
                           >
                             <Eye size={16} />
+                          </button>
+                          <button 
+                            onClick={() => handleDownloadWord(p)}
+                            className="p-1.5 text-blue-700 hover:bg-blue-50 rounded transition-all"
+                            title="Descargar Formato Word FPJ-35 (.docx)"
+                          >
+                            <FileDown size={16} />
                           </button>
                           <button 
                             onClick={() => marcarComoCitado(p)}
@@ -1331,7 +2275,9 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                   <div key={p.id} className="group">
                     <div className="px-6 py-4 grid grid-cols-12 gap-4 items-center">
                       <div className="col-span-3">
-                        <p className="text-xs font-bold text-fgn-blue uppercase">{p.nombre}</p>
+                        <p className="text-xs font-bold text-fgn-blue uppercase">
+                          {p.nombre}{p.identificacion && p.identificacion.trim() ? ` con CC ${p.identificacion.trim()}` : ''}
+                        </p>
                       </div>
                       <div className="col-span-2 font-mono text-[11px] text-text-muted uppercase">
                         {p.orden}
@@ -1366,6 +2312,13 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                             title="Ver Citación"
                           >
                             <Eye size={16} />
+                          </button>
+                          <button 
+                            onClick={() => handleDownloadWord(p)}
+                            className="p-1.5 text-blue-700 hover:bg-blue-50 rounded transition-all"
+                            title="Descargar Formato Word FPJ-35 (.docx)"
+                          >
+                            <FileDown size={16} />
                           </button>
                           <button 
                             onClick={() => setCitados(prev => prev.filter(c => c.id !== p.id))} 
