@@ -148,6 +148,89 @@ export const parseExcelTime = (val: any): string => {
   return str;
 };
 
+// Funciones inteligentes de detección de encabezados y mapeo de columnas
+export const isHeaderCell = (cellVal: any): string | null => {
+  if (cellVal === null || cellVal === undefined) return null;
+  const str = String(cellVal).trim();
+  if (!str) return null;
+  
+  // Normalizar acentos y mayúsculas
+  const norm = str.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+  // Descartar inmediatamente si parece un dato evidente (número de 8+ dígitos, correo, fecha, hora)
+  if (norm.includes('@') && norm.includes('.')) return null;
+  if (/^\d{8,25}$/.test(norm)) return null;
+  if (/^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/.test(norm)) return null;
+  if (/^\d{1,2}:\d{2}/.test(norm)) return null;
+
+  if (/^(OT|ORDEN\s*(DE)?\s*TRABAJO|O\.T\.)$/i.test(norm)) return 'ot';
+  if (/^(OPJ|POLICIA(\s*JUDICIAL)?|O\.P\.J\.|ORDEN\s*POLICIA)$/i.test(norm)) return 'opj';
+  if (/^(NUNC|NOTICIA(\s*CRIMINAL)?|SPOA|RADICADO(\s*INTERNO)?|NOTICIA)$/i.test(norm)) return 'nunc';
+  if (/^(FISCAL|DESPACHO|UNIDAD(\s*RECEPTORA)?|FISCALIA)$/i.test(norm)) return 'fiscal';
+  if (/^(NOMBRE(S)?|CITADO|PERSONA|NOMBRE\s*COMPLETO|PARTICIPANTE|DATOS\s*CITADO)$/i.test(norm)) return 'nombre';
+  if (/^(CEDULA|IDENTIFICACION|DOCUMENTO|C\.?C\.?|NRO\s*IDENTIFICACION|NUMERO\s*DOCUMENTO)$/i.test(norm)) return 'cedula';
+  if (/^(DIRECCION|DOMICILIO|RESIDENCIA|UBICACION|DIRECCION\s*RESIDENCIA)$/i.test(norm)) return 'direccion';
+  if (/^(TELEFONO|CELULAR|WHATSAPP|TEL|MOVIL|NUMERO\s*TELEFONICO|CONTACTO)$/i.test(norm)) return 'telefono';
+  if (/^(CORREO|EMAIL|E-MAIL|MAIL|CORREO\s*ELECTRONICO)$/i.test(norm)) return 'correo';
+  if (/^(FECHA|DIA|FECHA\s*(DE)?\s*(CITACION|AUDIENCIA|ENTREVISTA))$/i.test(norm)) return 'fecha';
+  if (/^(HORA|HORARIO|TIEMPO|HORA\s*(DE)?\s*(CITACION|AUDIENCIA))$/i.test(norm)) return 'hora';
+
+  return null;
+};
+
+export const detectIfHeaderRow = (rowCells: any[]): { isHeader: boolean; colMap: Record<string, number> } => {
+  const defaultColMap: Record<string, number> = {
+    ot: 0,
+    opj: 1,
+    nunc: 2,
+    fiscal: 3,
+    nombre: 4,
+    cedula: 5,
+    direccion: 6,
+    telefono: 7,
+    correo: 8,
+    fecha: 9,
+    hora: 10
+  };
+
+  if (!Array.isArray(rowCells) || rowCells.length === 0) {
+    return { isHeader: false, colMap: defaultColMap };
+  }
+
+  const detectedColMap: Record<string, number> = { ...defaultColMap };
+  let headerMatchCount = 0;
+
+  // Comprobar si hay indicadores inequívocos de datos en la fila
+  const hasStrongDataIndicator = rowCells.some(cell => {
+    if (cell === null || cell === undefined) return false;
+    const s = String(cell).trim();
+    if (s.includes('@') && s.includes('.')) return true;
+    if (/^\d{8,25}$/.test(s)) return true; // Cédula o NUNC numérico
+    if (/^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/.test(s)) return true; // Fecha
+    if (/^\d{1,2}:\d{2}/.test(s)) return true; // Hora
+    return false;
+  });
+
+  if (hasStrongDataIndicator) {
+    return { isHeader: false, colMap: defaultColMap };
+  }
+
+  rowCells.forEach((cell, idx) => {
+    const matchedType = isHeaderCell(cell);
+    if (matchedType) {
+      detectedColMap[matchedType] = idx;
+      headerMatchCount++;
+    }
+  });
+
+  // Solo consideramos que es encabezado si coinciden al menos 2 nombres de columna y no hay datos numéricos o fechas
+  if (headerMatchCount >= 2) {
+    return { isHeader: true, colMap: detectedColMap };
+  }
+
+  return { isHeader: false, colMap: defaultColMap };
+};
+
 interface ExcelMatrixViewProps {
   rows: ExcelInsumoRow[];
   onRowsChange: (rows: ExcelInsumoRow[]) => void;
@@ -369,54 +452,21 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
 
     // Determinar delimitador (tabulador \t, punto y coma ;, o coma ,)
     const firstLine = rawLines[0];
-    const delimiter = firstLine.includes('\t') ? '\t' : (firstLine.includes(';') ? ';' : ',');
-
-    // Comprobar si la primera fila corresponde a encabezados de columna
-    let startIndex = 0;
-    const firstLineUpper = firstLine.toUpperCase();
-    const isHeader = (
-      firstLineUpper.includes('OT') ||
-      firstLineUpper.includes('OPJ') ||
-      firstLineUpper.includes('NUNC') ||
-      firstLineUpper.includes('NOMBRE') ||
-      firstLineUpper.includes('CEDULA') ||
-      firstLineUpper.includes('FISCAL') ||
-      firstLineUpper.includes('FECHA')
-    );
-
-    let colMap = {
-      ot: 0,
-      opj: 1,
-      nunc: 2,
-      fiscal: 3,
-      nombre: 4,
-      cedula: 5,
-      direccion: 6,
-      telefono: 7,
-      correo: 8,
-      fecha: 9,
-      hora: 10
-    };
-
-    if (isHeader) {
-      startIndex = 1;
-      const headerCols = firstLine.split(delimiter).map(c => c.trim().toUpperCase());
-      headerCols.forEach((h, idx) => {
-        if (h.includes('OT') || h.includes('ORDEN TRABAJO') || h.includes('ORDEN DE TRABAJO')) colMap.ot = idx;
-        else if (h.includes('OPJ') || h.includes('POLICIA')) colMap.opj = idx;
-        else if (h.includes('NUNC') || h.includes('NOTICIA') || h.includes('SPOA') || h.includes('RADICADO')) colMap.nunc = idx;
-        else if (h.includes('FISCAL') || h.includes('DESPACHO') || h.includes('UNIDAD')) colMap.fiscal = idx;
-        else if (h.includes('NOMBRE') || h.includes('CITADO') || h.includes('PERSONA') || h.includes('PARTICIPANTE')) colMap.nombre = idx;
-        else if (h.includes('CEDULA') || h.includes('IDENTIFICACION') || h.includes('DOCUMENTO') || h.includes('CC') || h.includes('C.C')) colMap.cedula = idx;
-        else if (h.includes('DIRECCION') || h.includes('DOMICILIO') || h.includes('RESIDENCIA') || h.includes('UBICACION')) colMap.direccion = idx;
-        else if (h.includes('TELEFONO') || h.includes('CELULAR') || h.includes('WHATSAPP') || h.includes('TEL') || h.includes('MOVIL')) colMap.telefono = idx;
-        else if (h.includes('CORREO') || h.includes('EMAIL') || h.includes('E-MAIL') || h.includes('MAIL')) colMap.correo = idx;
-        else if (h.includes('FECHA') || h.includes('DIA') || h.includes('CITACION') || h.includes('AUDIENCIA') || h.includes('ENTREVISTA')) colMap.fecha = idx;
-        else if (h.includes('HORA') || h.includes('HORARIO') || h.includes('TIEMPO')) colMap.hora = idx;
-      });
+    let delimiter = '\t';
+    if (firstLine.includes('\t')) {
+      delimiter = '\t';
+    } else if (firstLine.includes(';')) {
+      delimiter = ';';
+    } else if (firstLine.includes(',')) {
+      delimiter = ',';
     }
 
-    if (startIndex >= rawLines.length) {
+    // Dividir celdas de la primera fila y verificar si es encabezado o fila de datos
+    let firstLineCols = firstLine.split(delimiter).map(c => c.replace(/^["']|["']$/g, '').trim());
+    const { isHeader, colMap } = detectIfHeaderRow(firstLineCols);
+    const startIndex = isHeader ? 1 : 0;
+
+    if (isHeader && startIndex >= rawLines.length) {
       Swal.fire({
         position: 'center',
         icon: 'error',
@@ -436,12 +486,12 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
       const line = rawLines[i];
       const rowDisplayNum = i + 1;
 
-      let cols = line.split(delimiter);
-      if (cols.length === 1 && line.includes('\t')) cols = line.split('\t');
-      else if (cols.length === 1 && line.includes(';')) cols = line.split(';');
+      let cols = line.split(delimiter).map(c => c.replace(/^["']|["']$/g, '').trim());
+      if (cols.length === 1 && line.includes('\t')) cols = line.split('\t').map(c => c.replace(/^["']|["']$/g, '').trim());
+      else if (cols.length === 1 && line.includes(';')) cols = line.split(';').map(c => c.replace(/^["']|["']$/g, '').trim());
 
       // Si la fila está totalmente vacía, se ignora
-      if (cols.every(c => !c.trim())) {
+      if (cols.every(c => !c)) {
         continue;
       }
 
@@ -451,7 +501,7 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
         break;
       }
 
-      const getCol = (idx: number) => (cols[idx] !== undefined ? String(cols[idx]).trim() : '');
+      const getCol = (idx: number) => (cols[idx] !== undefined && cols[idx] !== null ? String(cols[idx]).trim() : '');
 
       const ot = getCol(colMap.ot);
       const opj = getCol(colMap.opj);
@@ -587,53 +637,36 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
         const worksheet = workbook.Sheets[sheetName];
         const rawJson: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false });
 
-        if (rawJson.length <= 1) {
+        if (rawJson.length === 0) {
           Swal.fire({
             position: 'center',
             icon: 'error',
             iconColor: '#dc2626',
-            title: 'Archivo Sin Filas de Datos',
-            text: 'El archivo Excel seleccionado no contiene filas de datos para procesar.',
+            title: 'Archivo Vacío',
+            text: 'El archivo Excel seleccionado no contiene filas para procesar.',
             confirmButtonColor: '#003366',
             confirmButtonText: 'Entendido'
           });
           return;
         }
 
-        let startIndex = 1;
         const headerRow = rawJson[0] || [];
-        let colMap = {
-          ot: 0,
-          opj: 1,
-          nunc: 2,
-          fiscal: 3,
-          nombre: 4,
-          cedula: 5,
-          direccion: 6,
-          telefono: 7,
-          correo: 8,
-          fecha: 9,
-          hora: 10
-        };
-
-        if (Array.isArray(headerRow) && headerRow.length > 0) {
-          headerRow.forEach((h: any, idx: number) => {
-            const hStr = String(h || '').trim().toUpperCase();
-            if (hStr.includes('OT') || hStr.includes('ORDEN TRABAJO') || hStr.includes('ORDEN DE TRABAJO')) colMap.ot = idx;
-            else if (hStr.includes('OPJ') || hStr.includes('POLICIA')) colMap.opj = idx;
-            else if (hStr.includes('NUNC') || hStr.includes('NOTICIA') || hStr.includes('SPOA') || hStr.includes('RADICADO')) colMap.nunc = idx;
-            else if (hStr.includes('FISCAL') || hStr.includes('DESPACHO') || hStr.includes('UNIDAD')) colMap.fiscal = idx;
-            else if (hStr.includes('NOMBRE') || hStr.includes('CITADO') || hStr.includes('PERSONA') || hStr.includes('PARTICIPANTE')) colMap.nombre = idx;
-            else if (hStr.includes('CEDULA') || hStr.includes('IDENTIFICACION') || hStr.includes('DOCUMENTO') || hStr.includes('CC') || hStr.includes('C.C')) colMap.cedula = idx;
-            else if (hStr.includes('DIRECCION') || hStr.includes('DOMICILIO') || hStr.includes('RESIDENCIA') || hStr.includes('UBICACION')) colMap.direccion = idx;
-            else if (hStr.includes('TELEFONO') || hStr.includes('CELULAR') || hStr.includes('WHATSAPP') || hStr.includes('TEL') || hStr.includes('MOVIL')) colMap.telefono = idx;
-            else if (hStr.includes('CORREO') || hStr.includes('EMAIL') || hStr.includes('E-MAIL') || hStr.includes('MAIL')) colMap.correo = idx;
-            else if (hStr.includes('FECHA') || hStr.includes('DIA') || hStr.includes('CITACION') || hStr.includes('AUDIENCIA') || hStr.includes('ENTREVISTA')) colMap.fecha = idx;
-            else if (hStr.includes('HORA') || hStr.includes('HORARIO') || hStr.includes('TIEMPO')) colMap.hora = idx;
-          });
-        }
+        const { isHeader, colMap } = detectIfHeaderRow(headerRow);
+        const startIndex = isHeader ? 1 : 0;
 
         const dataRows = rawJson.slice(startIndex);
+        if (dataRows.length === 0) {
+          Swal.fire({
+            position: 'center',
+            icon: 'error',
+            iconColor: '#dc2626',
+            title: 'Solo Encabezados Detectados',
+            text: 'El archivo Excel contiene únicamente la fila de encabezados sin registros de datos.',
+            confirmButtonColor: '#003366',
+            confirmButtonText: 'Entendido'
+          });
+          return;
+        }
 
         const newRows: ExcelInsumoRow[] = dataRows.map((cols: any[], index: number) => {
           const getCol = (idx: number) => (cols[idx] !== undefined && cols[idx] !== null ? String(cols[idx]).trim() : '');
