@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Copy, User, Calendar, ClipboardList, FileText, FileCheck, FileX, Building2, 
   Trash2, Plus, Sparkles, FileDown, Download, Phone, Mail, MapPin, Briefcase,
@@ -13,6 +13,10 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { generateFPJ35WordDocument, generateCitationFromTemplate, downloadWordDocument } from './utils/docGenerator';
+import { Citacion, CitacionFilters, PageSizeOption } from './types';
+import { CitationFilterBar } from './components/CitationFilterBar';
+import { PaginationControls } from './components/PaginationControls';
+import { filterCitations, paginateList, getUniqueFiscales } from './utils/filterUtils';
 
 // Firebase Imports
 import { initializeApp } from 'firebase/app';
@@ -143,6 +147,42 @@ const App = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Independent Filter & Pagination States for each view
+  const [filtersPendientes, setFiltersPendientes] = useState<CitacionFilters>({
+    searchTerm: '',
+    fiscal: 'todos',
+    fechaFiltro: 'todas',
+  });
+  const [pagePendientes, setPagePendientes] = useState<number>(1);
+  const [pageSizePendientes, setPageSizePendientes] = useState<PageSizeOption>(10);
+
+  const [filtersCitados, setFiltersCitados] = useState<CitacionFilters>({
+    searchTerm: '',
+    fiscal: 'todos',
+    fechaFiltro: 'todas',
+    asistencia: 'todas',
+    informe: 'todos',
+  });
+  const [pageCitados, setPageCitados] = useState<number>(1);
+  const [pageSizeCitados, setPageSizeCitados] = useState<PageSizeOption>(10);
+
+  const [filtersHistorial, setFiltersHistorial] = useState<CitacionFilters>({
+    searchTerm: '',
+    fiscal: 'todos',
+    fechaFiltro: 'todas',
+    estado: 'todos',
+    asistencia: 'todas',
+    informe: 'todos',
+  });
+  const [pageHistorial, setPageHistorial] = useState<number>(1);
+  const [pageSizeHistorial, setPageSizeHistorial] = useState<PageSizeOption>(10);
+
+  // Unique Fiscal options across all data
+  const fiscalOptions = useMemo(() => {
+    const combined = [...historial, ...personas, ...citados];
+    return getUniqueFiscales(combined);
+  }, [historial, personas, citados]);
+
   const getSortedList = (list: any[]) => {
     return [...list].sort((a, b) => {
       const dateA = a.fecha || '1970-01-01';
@@ -171,13 +211,59 @@ const App = () => {
     }));
   };
 
-  const applyFilters = (list: any[]) => {
-    if (!searchTerm) return list;
-    const term = searchTerm.toLowerCase();
-    return list.filter(p => 
-      (p.nombre || "").toLowerCase().includes(term) || 
-      (p.orden || "").toLowerCase().includes(term)
-    );
+  // Pipeline for Pendientes (Citaciones Generadas)
+  const filteredPendientes = useMemo(() => {
+    return filterCitations(personas, filtersPendientes);
+  }, [personas, filtersPendientes]);
+
+  const sortedPendientes = useMemo(() => {
+    return getSortedList(filteredPendientes);
+  }, [filteredPendientes, sortConfig]);
+
+  const paginatedPendientes = useMemo(() => {
+    return paginateList(sortedPendientes, pagePendientes, pageSizePendientes);
+  }, [sortedPendientes, pagePendientes, pageSizePendientes]);
+
+  // Pipeline for Citados
+  const filteredCitados = useMemo(() => {
+    return filterCitations(citados, filtersCitados);
+  }, [citados, filtersCitados]);
+
+  const sortedCitados = useMemo(() => {
+    return getSortedList(filteredCitados);
+  }, [filteredCitados, sortConfig]);
+
+  const paginatedCitados = useMemo(() => {
+    return paginateList(sortedCitados, pageCitados, pageSizeCitados);
+  }, [sortedCitados, pageCitados, pageSizeCitados]);
+
+  // Pipeline for Historial (Archivo General)
+  const filteredHistorial = useMemo(() => {
+    return filterCitations(historial, filtersHistorial);
+  }, [historial, filtersHistorial]);
+
+  const sortedHistorial = useMemo(() => {
+    return getSortedList(filteredHistorial);
+  }, [filteredHistorial, sortConfig]);
+
+  const paginatedHistorial = useMemo(() => {
+    return paginateList(sortedHistorial, pageHistorial, pageSizeHistorial);
+  }, [sortedHistorial, pageHistorial, pageSizeHistorial]);
+
+  // Handler helpers that also reset the page to 1
+  const handleFilterChangePendientes = (newFilters: CitacionFilters) => {
+    setFiltersPendientes(newFilters);
+    setPagePendientes(1);
+  };
+
+  const handleFilterChangeCitados = (newFilters: CitacionFilters) => {
+    setFiltersCitados(newFilters);
+    setPageCitados(1);
+  };
+
+  const handleFilterChangeHistorial = (newFilters: CitacionFilters) => {
+    setFiltersHistorial(newFilters);
+    setPageHistorial(1);
   };
 
   // (1) Authentication & Connection Check
@@ -185,6 +271,26 @@ const App = () => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (u) => {
       if (u) {
         setUser(u);
+        
+        // Migrate any local guest citations if the user just signed in with Google
+        try {
+          const guestData = localStorage.getItem('fgn_guest_historial');
+          if (guestData) {
+            const guestItems = JSON.parse(guestData);
+            if (Array.isArray(guestItems) && guestItems.length > 0) {
+              const historialRef = collection(db, 'artifacts', appId, 'users', u.uid, 'historial');
+              for (const item of guestItems) {
+                const { id, ...cleanItem } = item;
+                await addDoc(historialRef, cleanItem);
+              }
+            }
+            localStorage.removeItem('fgn_guest_historial');
+          }
+        } catch (migErr) {
+          console.warn("Guest data migration skipped:", migErr);
+        }
+
+        localStorage.removeItem('fgn_guest_session');
         
         // Load Profile from Firestore & Sync with localStorage
         try {
@@ -210,7 +316,21 @@ const App = () => {
           console.warn("User data loading/sync skipped", e);
         }
       } else {
-        setUser(null);
+        // Restore guest session if previously active
+        const isGuestSession = localStorage.getItem('fgn_guest_session') === 'true';
+        if (isGuestSession) {
+          const guestUid = localStorage.getItem('fgn_guest_uid') || `guest_${Date.now()}`;
+          localStorage.setItem('fgn_guest_uid', guestUid);
+          setUser({
+            uid: guestUid,
+            isAnonymous: true,
+            isLocalGuest: true,
+            displayName: 'Funcionario Invitado',
+            email: null
+          });
+        } else {
+          setUser(null);
+        }
       }
     });
 
@@ -238,17 +358,42 @@ const App = () => {
     }
   };
 
-  const handleAnonymousLogin = async () => {
+  const handleGuestLogin = async () => {
     try {
-      await signInAnonymously(auth);
-    } catch (error: any) {
-      console.error("Error signing in anonymously:", error);
-      if (error.code === 'auth/admin-restricted-operation') {
-        alert("El inicio de sesión anónimo está deshabilitado en la consola de Firebase. Por favor use Google o habilítelo en Authentication > Sign-in method.");
-      } else {
-        alert("Error al iniciar sesión de forma anónima.");
+      // First attempt native Firebase Anonymous sign-in if enabled
+      const cred = await signInAnonymously(auth);
+      if (cred?.user) {
+        localStorage.removeItem('fgn_guest_session');
+        return;
       }
+    } catch (error: any) {
+      console.info("Anonymous auth via Firebase unavailable, activating Local Guest Session mode:", error?.code || error?.message);
     }
+
+    // Seamless fallback to Local Guest Session: 100% operational immediately
+    const guestUid = localStorage.getItem('fgn_guest_uid') || `guest_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    localStorage.setItem('fgn_guest_uid', guestUid);
+    localStorage.setItem('fgn_guest_session', 'true');
+    setUser({
+      uid: guestUid,
+      isAnonymous: true,
+      isLocalGuest: true,
+      displayName: 'Funcionario Invitado',
+      email: null
+    });
+  };
+
+  const handleLogout = async () => {
+    localStorage.removeItem('fgn_guest_session');
+    if (auth.currentUser) {
+      try {
+        await signOut(auth);
+      } catch (err) {}
+    }
+    setUser(null);
+    setPersonas([]);
+    setCitados([]);
+    setHistorial([]);
   };
 
   // Persist Profile Changes (localStorage + Firestore)
@@ -259,7 +404,7 @@ const App = () => {
       console.error("Error saving profile to localStorage:", e);
     }
 
-    if (!user) return;
+    if (!user || user.isLocalGuest) return;
     const saveConfig = async () => {
       try {
         await setDoc(doc(db, 'users', user.uid), { config }, { merge: true });
@@ -272,9 +417,24 @@ const App = () => {
     return () => clearTimeout(timeout);
   }, [config, user]);
 
-  // (2) Listen to History from Firestore
+  // (2) Listen to History from Firestore or load from localStorage for local guest
   useEffect(() => {
     if (!user) return;
+
+    if (user.isLocalGuest) {
+      try {
+        const stored = localStorage.getItem('fgn_guest_historial');
+        const docs = stored ? JSON.parse(stored) : [];
+        const sorted = docs.sort((a: any, b: any) => (b.creadoTimestamp || 0) - (a.creadoTimestamp || 0));
+        setHistorial(sorted);
+        setPersonas(sorted.filter((d: any) => !d.estado || d.estado === 'pendiente'));
+        setCitados(sorted.filter((d: any) => d.estado === 'citado'));
+        setHasInitializedPendientes(true);
+      } catch (e) {
+        console.error("Error reading local guest history:", e);
+      }
+      return;
+    }
 
     const historialRef = collection(db, 'artifacts', appId, 'users', user.uid, 'historial');
     const q = query(historialRef);
@@ -360,6 +520,22 @@ const App = () => {
         creadoTimestamp: Date.now()
       };
       
+      if (user.isLocalGuest) {
+        const newItem = { 
+          ...item, 
+          id: `cit_${Date.now()}_${Math.random().toString(36).slice(2, 7)}` 
+        };
+        setHistorial(prev => {
+          const next = [newItem, ...prev];
+          try {
+            localStorage.setItem('fgn_guest_historial', JSON.stringify(next));
+          } catch (e) {}
+          return next;
+        });
+        setPersonas(prev => [newItem, ...prev]);
+        return;
+      }
+
       // Firestore history
       const historialRef = collection(db, 'artifacts', appId, 'users', user.uid, 'historial');
       await addDoc(historialRef, item);
@@ -627,7 +803,7 @@ const App = () => {
     }
   };
 
-  const eliminarDeBandeja = (id: any) => setPersonas(personas.filter(p => p.id !== id));
+  const eliminarDeBandeja = (id: any) => eliminarDeHistorial(id);
   
   const marcarComoCitado = async (item: any) => {
     if (!user || !item.id) return;
@@ -638,9 +814,20 @@ const App = () => {
         if (prev.some(c => c.id === item.id)) return prev;
         return [...prev, { ...item, estado: 'citado' }];
       });
+      setHistorial(prev => {
+        const next = prev.map(h => h.id === item.id ? { ...h, estado: 'citado' } : h);
+        if (user.isLocalGuest) {
+          try {
+            localStorage.setItem('fgn_guest_historial', JSON.stringify(next));
+          } catch (e) {}
+        }
+        return next;
+      });
 
-      const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'historial', item.id);
-      await updateDoc(docRef, { estado: 'citado' });
+      if (!user.isLocalGuest) {
+        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'historial', item.id);
+        await updateDoc(docRef, { estado: 'citado' });
+      }
     } catch (err) {
       console.error("Error al marcar como citado:", err);
     }
@@ -658,14 +845,25 @@ const App = () => {
         ...prev, 
         ...itemsToMove.map(item => ({ ...item, estado: 'citado' }))
       ]);
+      setHistorial(prev => {
+        const next = prev.map(h => selectedIds.includes(h.id) ? { ...h, estado: 'citado' } : h);
+        if (user.isLocalGuest) {
+          try {
+            localStorage.setItem('fgn_guest_historial', JSON.stringify(next));
+          } catch (e) {}
+        }
+        return next;
+      });
       setSelectedIds([]);
 
-      // Firestore updates
-      const batchPromises = itemsToMove.map(item => {
-        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'historial', item.id);
-        return updateDoc(docRef, { estado: 'citado' });
-      });
-      await Promise.all(batchPromises);
+      if (!user.isLocalGuest) {
+        // Firestore updates
+        const batchPromises = itemsToMove.map(item => {
+          const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'historial', item.id);
+          return updateDoc(docRef, { estado: 'citado' });
+        });
+        await Promise.all(batchPromises);
+      }
     } catch (err) {
       console.error("Error en movimiento masivo:", err);
     }
@@ -680,12 +878,23 @@ const App = () => {
   const marcarAsistencia = async (id: string, valor: 'asistio' | 'no_asistio' | null) => {
     if (!user) return;
     try {
-      const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'historial', id);
-      await updateDoc(docRef, { asistencia: valor });
-      
-      // Optimistic update for Citados and Historial
+      // Optimistic update for Citados, Historial and Personas
       setCitados(prev => prev.map(c => c.id === id ? { ...c, asistencia: valor } : c));
-      setHistorial(prev => prev.map(h => h.id === id ? { ...h, asistencia: valor } : h));
+      setHistorial(prev => {
+        const next = prev.map(h => h.id === id ? { ...h, asistencia: valor } : h);
+        if (user.isLocalGuest) {
+          try {
+            localStorage.setItem('fgn_guest_historial', JSON.stringify(next));
+          } catch (e) {}
+        }
+        return next;
+      });
+      setPersonas(prev => prev.map(p => p.id === id ? { ...p, asistencia: valor } : p));
+
+      if (!user.isLocalGuest) {
+        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'historial', id);
+        await updateDoc(docRef, { asistencia: valor });
+      }
     } catch (err) {
       console.error("Error al marcar asistencia:", err);
     }
@@ -694,11 +903,23 @@ const App = () => {
   const marcarInforme = async (id: string, valor: 'si' | 'no' | null) => {
     if (!user) return;
     try {
-      const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'historial', id);
-      await updateDoc(docRef, { informe: valor });
-      
-      // Optimistic update
-      setHistorial(prev => prev.map(h => h.id === id ? { ...h, informe: valor } : h));
+      // Optimistic update in all lists
+      setHistorial(prev => {
+        const next = prev.map(h => h.id === id ? { ...h, informe: valor } : h);
+        if (user.isLocalGuest) {
+          try {
+            localStorage.setItem('fgn_guest_historial', JSON.stringify(next));
+          } catch (e) {}
+        }
+        return next;
+      });
+      setCitados(prev => prev.map(c => c.id === id ? { ...c, informe: valor } : c));
+      setPersonas(prev => prev.map(p => p.id === id ? { ...p, informe: valor } : p));
+
+      if (!user.isLocalGuest) {
+        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'historial', id);
+        await updateDoc(docRef, { informe: valor });
+      }
     } catch (err) {
       console.error("Error al marcar informe:", err);
     }
@@ -707,10 +928,25 @@ const App = () => {
   const eliminarDeHistorial = async (id: string) => {
     if (!user) return;
     try {
-      await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'historial', id));
-      // También lo quitamos de las listas locales si está
+      // Remove immediately from all local state
       setPersonas(prev => prev.filter(p => p.id !== id));
       setCitados(prev => prev.filter(c => c.id !== id));
+      setHistorial(prev => {
+        const next = prev.filter(h => h.id !== id);
+        if (user.isLocalGuest) {
+          try {
+            localStorage.setItem('fgn_guest_historial', JSON.stringify(next));
+          } catch (e) {}
+        }
+        return next;
+      });
+      setSelectedIds(prev => prev.filter(i => i !== id));
+
+      if (!user.isLocalGuest) {
+        // Remove from Firestore
+        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'historial', id);
+        await deleteDoc(docRef);
+      }
     } catch (err) {
       console.error("Error deleting from history:", err);
     }
@@ -752,38 +988,44 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
         <motion.div 
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          className="bg-white p-10 rounded-xl shadow-2xl flex flex-col items-center space-y-6 max-w-sm w-full border border-fgn-border"
+          className="bg-white p-8 sm:p-10 rounded-xl shadow-2xl flex flex-col items-center space-y-6 max-w-sm w-full border border-fgn-border"
         >
           <div className="text-center">
-            <div className="bg-fgn-gold w-16 h-16 rounded-full mx-auto flex items-center justify-center mb-4">
+            <div className="bg-fgn-gold w-16 h-16 rounded-full mx-auto flex items-center justify-center mb-4 shadow-sm">
                <Building2 size={32} className="text-fgn-blue" />
             </div>
-            <h2 className="text-xl font-bold text-fgn-blue uppercase tracking-tight">Acceso Requerido</h2>
+            <h2 className="text-xl font-bold text-fgn-blue uppercase tracking-tight">Acceso a Citaciones FGN</h2>
             <p className="text-text-muted text-[11px] font-medium leading-relaxed mt-2 uppercase tracking-widest">
-              Para gestionar citaciones de forma segura, inicie sesión con su cuenta institucional o personal.
+              Seleccione una modalidad para generar citaciones, extraer órdenes con IA y tramitar comparecencias.
             </p>
           </div>
           
           <div className="w-full space-y-3">
             <button 
-              onClick={handleGoogleLogin}
-              className="w-full flex items-center justify-center gap-3 bg-white border border-fgn-border py-3 rounded font-bold text-xs uppercase tracking-widest text-fgn-blue hover:bg-slate-50 transition-all shadow-sm"
+              onClick={handleGuestLogin}
+              className="w-full py-3.5 bg-fgn-blue text-white font-bold text-xs uppercase tracking-widest rounded hover:bg-slate-900 transition-all shadow-md flex items-center justify-center gap-2.5 cursor-pointer"
             >
-              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" referrerPolicy="no-referrer" />
-              Ingresar con Google
+              <UserCheck size={18} className="text-fgn-gold" />
+              Ingresar como Invitado
             </button>
             
             <button 
-              onClick={handleAnonymousLogin}
-              className="w-full py-3 bg-bg-gray text-text-muted font-bold text-[10px] uppercase tracking-widest rounded hover:bg-slate-200 transition-all"
+              onClick={handleGoogleLogin}
+              className="w-full flex items-center justify-center gap-3 bg-white border border-fgn-border py-3 rounded font-bold text-xs uppercase tracking-widest text-fgn-blue hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
             >
-              Acceso Rápido (Invitado)
+              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-4 h-4" referrerPolicy="no-referrer" />
+              Ingresar con Google
             </button>
           </div>
 
-          <p className="text-[9px] text-text-muted text-center leading-relaxed">
-            Nota: El acceso rápido requiere que "Anonymous Auth" esté habilitado en la consola de Firebase.
-          </p>
+          <div className="bg-emerald-50 border border-emerald-200 rounded p-3 text-center">
+            <p className="text-[10.5px] text-emerald-900 font-semibold leading-relaxed">
+              ✓ Acceso para invitados habilitado
+            </p>
+            <p className="text-[9.5px] text-emerald-700 leading-normal mt-0.5">
+              Acceda a todas las herramientas: extracción de órdenes con IA, formato Word FPJ-35, filtros y control de citaciones.
+            </p>
+          </div>
         </motion.div>
       ) : (
         <div className="bg-white p-10 rounded-xl shadow-2xl flex flex-col items-center space-y-4 max-w-sm w-full mx-4 border border-fgn-border">
@@ -895,19 +1137,29 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
 
                       {/* REQUERIMIENTO & CITACION */}
                       <div className="p-4 bg-slate-50/70 border-t border-slate-200 space-y-3">
-                        <p className="font-bold text-fgn-blue text-[10px] uppercase border-b pb-1">2. MOTIVO Y LUGAR DE COMPARECENCIA</p>
-                        <div className="space-y-2 text-[11px]">
-                          <p>
-                            <span className="text-slate-500 font-medium">Motivo:</span> <span>{selectedCitation.motivo || 'Rendir entrevista dentro de las diligencias investigativas del proceso.'}</span>
+                        <div className="flex items-center justify-between border-b pb-1">
+                          <p className="font-bold text-fgn-blue text-[10px] uppercase">2. MOTIVO Y LUGAR DE COMPARECENCIA (FPJ-35)</p>
+                          <span className="text-[9px] bg-amber-50 text-amber-800 font-semibold px-2 py-0.5 rounded border border-amber-200">Campos en negrita y subrayados</span>
+                        </div>
+                        <div className="bg-white p-3.5 rounded-lg border border-slate-300 text-[11.5px] leading-relaxed text-slate-800 shadow-2xs">
+                          Se solicita comparecer el próximo <strong className="font-bold underline text-slate-950">{formatDateES(selectedCitation.fecha)}</strong> a las <strong className="font-bold underline text-slate-950">{formatTimeAMPM(selectedCitation.hora)}</strong>, en las instalaciones de <strong className="font-bold underline text-slate-950">{selectedCitation.instalaciones || selectedCitation.oficina_creador || config.instalaciones}</strong>{selectedCitation.direccionInstalaciones || config.direccionInstalaciones ? <>, ubicadas en la <strong className="font-bold underline text-slate-950">{selectedCitation.direccionInstalaciones || config.direccionInstalaciones}</strong></> : null} para <strong className="font-bold underline text-slate-950">{selectedCitation.motivo || 'rendir entrevista dentro de las diligencias investigativas relacionadas en el proceso'}</strong>, dentro del proceso de la referencia.
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1">
+                          <p className="bg-slate-100/70 p-2 rounded border border-slate-200">
+                            <span className="text-slate-500 font-medium block text-[9px] uppercase">Motivo:</span> 
+                            <strong className="font-bold underline text-slate-900">{selectedCitation.motivo || 'Rendir entrevista dentro de las diligencias investigativas del proceso.'}</strong>
                           </p>
-                          <p>
-                            <span className="text-slate-500 font-medium">Lugar / Sede:</span> <strong>{selectedCitation.instalaciones || selectedCitation.oficina_creador || config.oficina}</strong>
+                          <p className="bg-slate-100/70 p-2 rounded border border-slate-200">
+                            <span className="text-slate-500 font-medium block text-[9px] uppercase">Lugar / Sede:</span> 
+                            <strong className="font-bold underline text-slate-900">{selectedCitation.instalaciones || selectedCitation.oficina_creador || config.oficina}</strong>
                           </p>
-                          <p>
-                            <span className="text-slate-500 font-medium">Dirección Sede:</span> <span>{selectedCitation.direccionInstalaciones || config.direccionInstalaciones || 'Sede Principal Canapote / Crespo'}</span>
+                          <p className="bg-slate-100/70 p-2 rounded border border-slate-200">
+                            <span className="text-slate-500 font-medium block text-[9px] uppercase">Dirección Sede:</span> 
+                            <strong className="font-bold underline text-slate-900">{selectedCitation.direccionInstalaciones || config.direccionInstalaciones || 'Sede Principal Canapote / Crespo'}</strong>
                           </p>
-                          <p>
-                            <span className="text-slate-500 font-medium">Despacho Fiscal:</span> <span>Fiscalía {selectedCitation.fiscal || '17 Local'} - Unidad {selectedCitation.unidad || 'Patrimonio Económico'}</span>
+                          <p className="bg-slate-100/70 p-2 rounded border border-slate-200">
+                            <span className="text-slate-500 font-medium block text-[9px] uppercase">Despacho Fiscal:</span> 
+                            <strong className="font-bold underline text-slate-900">Fiscalía {selectedCitation.fiscal || '17 Local'} - Unidad {selectedCitation.unidad || 'Patrimonio Económico'}</strong>
                           </p>
                         </div>
                       </div>
@@ -1252,7 +1504,7 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                         </div>
                         <div className="bg-white p-2 rounded border border-blue-100 shadow-2xs">
                           <strong className="text-fgn-blue font-bold">&#123;MOTIVO_CITACION&#125;</strong>
-                          <p className="text-slate-600 mt-0.5 font-sans">Engloba todo el párrafo de comparecencia (fecha, hora, sede, dirección y motivo estructurados).</p>
+                          <p className="text-slate-600 mt-0.5 font-sans">Engloba todo el párrafo de comparecencia, insertando fecha, hora, sede, dirección y motivo en <span className="font-semibold text-slate-900 underline">negrita y subrayados</span>.</p>
                         </div>
                         <div className="bg-white p-2 rounded border border-blue-100 shadow-2xs">
                           <strong className="text-fgn-blue font-bold">&#123;FIRMA&#125;</strong>
@@ -1299,8 +1551,19 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
             {user && (
               <div className="flex items-center gap-3 mr-2">
                  <div className="text-right hidden sm:block">
-                   <p className="text-[9px] font-bold uppercase text-blue-200 tracking-widest leading-none">Investigador</p>
-                   <p className="text-xs font-bold text-white leading-tight truncate max-w-[150px]">{user.displayName || user.email || 'Agente'}</p>
+                   <div className="flex items-center justify-end gap-1.5">
+                     <p className="text-[9px] font-bold uppercase text-blue-200 tracking-widest leading-none">
+                       {user.isAnonymous || user.isLocalGuest ? 'Modo' : 'Investigador'}
+                     </p>
+                     {(user.isAnonymous || user.isLocalGuest) && (
+                       <span className="bg-amber-400 text-slate-900 text-[8px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">
+                         Invitado
+                       </span>
+                     )}
+                   </div>
+                   <p className="text-xs font-bold text-white leading-tight truncate max-w-[150px]">
+                     {user.displayName || user.email || 'Funcionario Invitado'}
+                   </p>
                  </div>
                  <button 
                    onClick={() => setIsProfileModalOpen(true)}
@@ -1310,9 +1573,19 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                    <Building2 size={14} className="text-fgn-gold" />
                    <span className="hidden md:inline">Perfil Investigador</span>
                  </button>
+                 {(user.isAnonymous || user.isLocalGuest) && (
+                   <button 
+                     onClick={handleGoogleLogin}
+                     className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-white text-fgn-blue hover:bg-slate-100 rounded text-[10px] font-bold uppercase tracking-wider transition-all shadow-sm"
+                     title="Vincular con cuenta de Google"
+                   >
+                     <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-3.5 h-3.5" referrerPolicy="no-referrer" />
+                     <span>Vincular Google</span>
+                   </button>
+                 )}
                  <button 
-                  onClick={() => signOut(auth)}
-                  className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors"
+                  onClick={handleLogout}
+                  className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors cursor-pointer"
                   title="Cerrar Sesión"
                  >
                    <LogOut size={16} className="text-white" />
@@ -1415,32 +1688,33 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
             animate={{ opacity: 1, x: 0 }}
             className="space-y-6"
           >
-            <div className="flex items-center justify-between">
-               <button 
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <button 
                 onClick={() => {
                   setActiveMode(null);
                   setSearchTerm("");
                 }} 
-                className="flex items-center gap-2 text-text-muted hover:text-fgn-blue font-bold uppercase text-[10px] tracking-widest bg-white px-4 py-2 rounded border border-fgn-border shadow-sm transition-all"
-               >
-                 <ArrowLeft size={14} strokeWidth={2} /> Volver al Inicio
-               </button>
-               <div className="flex-1 max-w-md mx-6">
-                 <div className="relative">
-                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                   <input 
-                     type="text"
-                     placeholder="BUSCAR POR NOMBRE O No. ORDEN..."
-                     value={searchTerm}
-                     onChange={(e) => setSearchTerm(e.target.value)}
-                     className="w-full bg-white border border-fgn-border rounded-lg py-2.5 pl-10 pr-4 text-xs font-bold text-fgn-blue placeholder:text-slate-300 outline-none focus:border-fgn-blue focus:ring-1 focus:ring-fgn-blue shadow-sm transition-all uppercase"
-                   />
-                 </div>
-               </div>
-               <h2 className="text-xl font-bold text-fgn-blue uppercase tracking-tight flex items-center gap-3">
-                 <History size={24} className="text-fgn-blue"/> Archivo Histórico de Citaciones
-               </h2>
+                className="flex items-center gap-2 text-text-muted hover:text-fgn-blue font-bold uppercase text-[10px] tracking-widest bg-white px-4 py-2 rounded border border-fgn-border shadow-sm transition-all w-fit"
+              >
+                <ArrowLeft size={14} strokeWidth={2} /> Volver al Inicio
+              </button>
+              <h2 className="text-xl font-bold text-fgn-blue uppercase tracking-tight flex items-center gap-3">
+                <History size={24} className="text-fgn-blue"/> Archivo Histórico de Citaciones
+              </h2>
             </div>
+
+            {/* Filter Bar */}
+            <CitationFilterBar
+              filters={filtersHistorial}
+              onFilterChange={handleFilterChangeHistorial}
+              fiscalOptions={fiscalOptions}
+              showEstadoFilter={true}
+              showInformeFilter={true}
+              showAsistenciaFilter={true}
+              totalCount={historial.length}
+              filteredCount={filteredHistorial.length}
+              placeholderSearch="BUSCAR EN ARCHIVO HISTÓRICO (NOMBRE, CÉDULA, ORDEN, FISCAL)..."
+            />
 
             <div className="bg-white rounded-xl border border-fgn-border overflow-hidden shadow-sm">
               <div className="bg-bg-gray px-6 py-3 border-b border-fgn-border grid grid-cols-12 gap-4 text-[9px] font-bold text-text-muted uppercase tracking-widest">
@@ -1460,12 +1734,22 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
 
               {historial.length === 0 ? (
                 <div className="text-center py-24">
-                   <Search size={48} className="mx-auto text-slate-200 mb-4" />
-                   <p className="text-text-muted font-bold uppercase tracking-widest text-[10px]">Sin registros en base de datos</p>
+                  <Search size={48} className="mx-auto text-slate-200 mb-4" />
+                  <p className="text-text-muted font-bold uppercase tracking-widest text-[10px]">Sin registros en base de datos</p>
+                </div>
+              ) : filteredHistorial.length === 0 ? (
+                <div className="text-center py-20 bg-slate-50">
+                  <Search size={40} className="mx-auto text-slate-300 mb-2" />
+                  <p className="text-text-muted font-bold uppercase tracking-widest text-xs">
+                    No se encontraron citaciones con los filtros aplicados
+                  </p>
+                  <p className="text-slate-400 text-[11px] mt-1">
+                    Pruebe modificando los términos de búsqueda o limpiando los filtros.
+                  </p>
                 </div>
               ) : (
                 <div className="divide-y divide-fgn-border/30">
-                  {getSortedList(applyFilters(historial)).map((p) => (
+                  {paginatedHistorial.map((p) => (
                     <motion.div 
                       layout
                       key={p.id} 
@@ -1475,6 +1759,11 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                         <p className="text-xs font-bold text-fgn-blue uppercase">
                           {p.nombre}{p.identificacion && p.identificacion.trim() ? ` con CC ${p.identificacion.trim()}` : ''}
                         </p>
+                        {p.fiscal && (
+                          <p className="text-[10px] text-slate-400 font-medium uppercase mt-0.5">
+                            Fiscalía {p.fiscal}
+                          </p>
+                        )}
                       </div>
                       <div className="col-span-2 font-mono text-[11px] text-text-muted uppercase">
                         {p.orden}
@@ -1484,36 +1773,36 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                         {p.hora && <span className="text-[10px] text-fgn-gold font-bold">{formatTimeAMPM(p.hora)}</span>}
                       </div>
                       <div className="col-span-2 flex items-center justify-center gap-2">
-                          <button 
-                            onClick={() => marcarInforme(p.id, p.informe === 'si' ? null : 'si')}
-                            className={`p-1.5 rounded transition-all border ${p.informe === 'si' ? 'bg-fgn-blue text-white border-fgn-blue' : 'bg-white text-slate-300 border-slate-200 hover:text-fgn-blue hover:border-fgn-blue'}`}
-                            title="Informe Realizado"
-                          >
-                            <FileCheck size={14} />
-                          </button>
-                          <button 
-                            onClick={() => marcarInforme(p.id, p.informe === 'no' ? null : 'no')}
-                            className={`p-1.5 rounded transition-all border ${p.informe === 'no' ? 'bg-slate-500 text-white border-slate-500' : 'bg-white text-slate-300 border-slate-200 hover:text-slate-500 hover:border-slate-500'}`}
-                            title="Sin Informe"
-                          >
-                            <FileX size={14} />
-                          </button>
+                        <button 
+                          onClick={() => marcarInforme(p.id, p.informe === 'si' ? null : 'si')}
+                          className={`p-1.5 rounded transition-all border ${p.informe === 'si' ? 'bg-fgn-blue text-white border-fgn-blue shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-fgn-blue hover:border-fgn-blue'}`}
+                          title={p.informe === 'si' ? 'Informe Realizado (Clic para desmarcar)' : 'Marcar con Informe'}
+                        >
+                          <FileCheck size={14} />
+                        </button>
+                        <button 
+                          onClick={() => marcarInforme(p.id, p.informe === 'no' ? null : 'no')}
+                          className={`p-1.5 rounded transition-all border ${p.informe === 'no' ? 'bg-slate-500 text-white border-slate-500 shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-slate-500 hover:border-slate-500'}`}
+                          title={p.informe === 'no' ? 'Marcado Sin Informe (Clic para desmarcar)' : 'Marcar Sin Informe'}
+                        >
+                          <FileX size={14} />
+                        </button>
                       </div>
                       <div className="col-span-2 flex items-center justify-center gap-2">
-                          <button 
-                            onClick={() => marcarAsistencia(p.id, p.asistencia === 'asistio' ? null : 'asistio')}
-                            className={`p-1.5 rounded transition-all border ${p.asistencia === 'asistio' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-300 border-slate-200 hover:text-green-500 hover:border-green-500'}`}
-                            title="Marcó Asistencia"
-                          >
-                            <UserCheck size={14} />
-                          </button>
-                          <button 
-                            onClick={() => marcarAsistencia(p.id, p.asistencia === 'no_asistio' ? null : 'no_asistio')}
-                            className={`p-1.5 rounded transition-all border ${p.asistencia === 'no_asistio' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-300 border-slate-200 hover:text-red-500 hover:border-red-500'}`}
-                            title="No Asistió"
-                          >
-                            <UserX size={14} />
-                          </button>
+                        <button 
+                          onClick={() => marcarAsistencia(p.id, p.asistencia === 'asistio' ? null : 'asistio')}
+                          className={`p-1.5 rounded transition-all border ${p.asistencia === 'asistio' ? 'bg-green-600 text-white border-green-600 shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-green-500 hover:border-green-500'}`}
+                          title={p.asistencia === 'asistio' ? 'Asistió (Clic para desmarcar)' : 'Marcar Asistió'}
+                        >
+                          <UserCheck size={14} />
+                        </button>
+                        <button 
+                          onClick={() => marcarAsistencia(p.id, p.asistencia === 'no_asistio' ? null : 'no_asistio')}
+                          className={`p-1.5 rounded transition-all border ${p.asistencia === 'no_asistio' ? 'bg-red-600 text-white border-red-600 shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-red-500 hover:border-red-500'}`}
+                          title={p.asistencia === 'no_asistio' ? 'No Asistió (Clic para desmarcar)' : 'Marcar No Asistió'}
+                        >
+                          <UserX size={14} />
+                        </button>
                       </div>
                       <div className="col-span-1 flex items-center justify-end gap-1">
                         <button 
@@ -1536,7 +1825,7 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                         <button 
                           onClick={() => eliminarDeHistorial(p.id)} 
                           className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-all"
-                          title="Eliminar"
+                          title="Eliminar Citación"
                         >
                           <Trash2 size={16} />
                         </button>
@@ -1545,6 +1834,16 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                   ))}
                 </div>
               )}
+
+              {/* Controles de Paginación */}
+              <PaginationControls
+                totalItems={filteredHistorial.length}
+                currentPage={pageHistorial}
+                pageSize={pageSizeHistorial}
+                onPageChange={setPageHistorial}
+                onPageSizeChange={setPageSizeHistorial}
+                itemLabel="citaciones archivadas"
+              />
             </div>
           </motion.div>
         )}
@@ -2075,45 +2374,46 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
           animate={{ opacity: 1, y: 0 }}
           className="space-y-6 pb-20"
         >
-          <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <button 
-                  onClick={() => {
-                    setActiveMode(null);
-                    setSelectedIds([]);
-                    setSearchTerm("");
-                  }} 
-                  className="flex items-center gap-2 text-text-muted hover:text-fgn-blue font-bold uppercase text-[10px] tracking-widest bg-white px-4 py-2 rounded border border-fgn-border shadow-sm transition-all"
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => {
+                  setActiveMode(null);
+                  setSelectedIds([]);
+                  setSearchTerm("");
+                }} 
+                className="flex items-center gap-2 text-text-muted hover:text-fgn-blue font-bold uppercase text-[10px] tracking-widest bg-white px-4 py-2 rounded border border-fgn-border shadow-sm transition-all"
+              >
+                <ArrowLeft size={14} strokeWidth={2} /> Volver al Inicio
+              </button>
+              {selectedIds.length > 0 && (
+                <motion.button
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  onClick={marcarComoCitadoBulk}
+                  className="flex items-center gap-2 bg-blue-600 text-white font-bold uppercase text-[10px] tracking-widest px-4 py-2 rounded shadow-md hover:bg-blue-700 transition-all"
                 >
-                  <ArrowLeft size={14} strokeWidth={2} /> Volver al Inicio
-                </button>
-                {selectedIds.length > 0 && (
-                  <motion.button
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    onClick={marcarComoCitadoBulk}
-                    className="flex items-center gap-2 bg-blue-600 text-white font-bold uppercase text-[10px] tracking-widest px-4 py-2 rounded shadow-md hover:bg-blue-700 transition-all"
-                  >
-                    <CheckCircle size={14} /> Mover Seleccionados ({selectedIds.length})
-                  </motion.button>
-                )}
-              </div>
-              <div className="flex-1 max-w-md mx-6">
-                 <div className="relative">
-                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                   <input 
-                     type="text"
-                     placeholder="BUSCAR EN GENERADAS..."
-                     value={searchTerm}
-                     onChange={(e) => setSearchTerm(e.target.value)}
-                     className="w-full bg-white border border-fgn-border rounded-lg py-2.5 pl-10 pr-4 text-xs font-bold text-red-600 placeholder:text-slate-300 outline-none focus:border-fgn-blue focus:ring-1 focus:ring-fgn-blue shadow-sm transition-all uppercase"
-                   />
-                 </div>
-               </div>
-              <h2 className="text-xl font-bold text-red-600 uppercase tracking-tight flex items-center gap-3">
-                <ClipboardList size={24} /> Listado de Citaciones Generadas
-              </h2>
+                  <CheckCircle size={14} /> Mover Seleccionados ({selectedIds.length})
+                </motion.button>
+              )}
+            </div>
+            <h2 className="text-xl font-bold text-red-600 uppercase tracking-tight flex items-center gap-3">
+              <ClipboardList size={24} /> Listado de Citaciones Generadas
+            </h2>
           </div>
+
+          {/* Filter Bar */}
+          <CitationFilterBar
+            filters={filtersPendientes}
+            onFilterChange={handleFilterChangePendientes}
+            fiscalOptions={fiscalOptions}
+            showEstadoFilter={false}
+            showInformeFilter={false}
+            showAsistenciaFilter={false}
+            totalCount={personas.length}
+            filteredCount={filteredPendientes.length}
+            placeholderSearch="BUSCAR EN GENERADAS (NOMBRE, CÉDULA, ORDEN OPJ)..."
+          />
 
           <div className="bg-white rounded-xl border border-fgn-border overflow-hidden shadow-sm">
             <div className="bg-bg-gray px-6 py-3 border-b border-fgn-border grid grid-cols-12 gap-4 text-[9px] font-bold text-text-muted uppercase tracking-widest">
@@ -2121,10 +2421,13 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                 <input 
                   type="checkbox" 
                   className="w-4 h-4 rounded border-fgn-border text-fgn-blue focus:ring-fgn-blue"
-                  checked={personas.length > 0 && selectedIds.length === personas.length}
+                  checked={paginatedPendientes.length > 0 && paginatedPendientes.every(p => selectedIds.includes(p.id))}
                   onChange={(e) => {
-                    if (e.target.checked) setSelectedIds(personas.map(p => p.id));
-                    else setSelectedIds([]);
+                    if (e.target.checked) {
+                      setSelectedIds(prev => Array.from(new Set([...prev, ...paginatedPendientes.map(p => p.id)])));
+                    } else {
+                      setSelectedIds(prev => prev.filter(id => !paginatedPendientes.some(p => p.id === id)));
+                    }
                   }}
                 />
               </div>
@@ -2146,9 +2449,16 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                   <Check size={40} className="mx-auto text-green-300 mb-2" />
                   <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">No hay citaciones pendientes</p>
                 </div>
+              ) : filteredPendientes.length === 0 ? (
+                <div className="text-center py-20 bg-slate-50">
+                  <Search size={40} className="mx-auto text-slate-300 mb-2" />
+                  <p className="text-text-muted font-bold uppercase tracking-widest text-xs">
+                    No se encontraron citaciones generadas con los filtros aplicados
+                  </p>
+                </div>
               ) : (
-                getSortedList(applyFilters(personas)).map((p) => (
-                  <div key={p.id} className="group">
+                paginatedPendientes.map((p) => (
+                  <div key={p.id} className="group hover:bg-slate-50 transition-colors">
                     <div className="px-6 py-4 grid grid-cols-12 gap-4 items-center">
                       <div className="col-span-1 flex items-center justify-center">
                         <input 
@@ -2162,6 +2472,11 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                         <p className="text-xs font-bold text-fgn-blue uppercase">
                           {p.nombre}{p.identificacion && p.identificacion.trim() ? ` con CC ${p.identificacion.trim()}` : ''}
                         </p>
+                        {p.fiscal && (
+                          <p className="text-[10px] text-slate-400 font-medium uppercase mt-0.5">
+                            Fiscalía {p.fiscal}
+                          </p>
+                        )}
                       </div>
                       <div className="col-span-2 font-mono text-[11px] text-text-muted uppercase">
                         {p.orden}
@@ -2171,46 +2486,60 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                         {p.hora && <span className="text-[10px] text-fgn-gold font-bold">{formatTimeAMPM(p.hora)}</span>}
                       </div>
                       <div className="col-span-2 flex items-center justify-end gap-1">
-                          <button 
-                            onClick={() => {
-                              setSelectedCitation(p);
-                              setIsModalOpen(true);
-                            }}
-                            className="p-1.5 text-pink-600 hover:bg-pink-50 rounded transition-all"
-                            title="Ver Citación Completa"
-                          >
-                            <Eye size={16} />
-                          </button>
-                          <button 
-                            onClick={() => handleDownloadWord(p)}
-                            className="p-1.5 text-blue-700 hover:bg-blue-50 rounded transition-all"
-                            title="Descargar Formato Word FPJ-35 (.docx)"
-                          >
-                            <FileDown size={16} />
-                          </button>
-                          <button 
-                            onClick={() => marcarComoCitado(p)}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-all"
-                            title="Marcar como Citado (Mover a Citados)"
-                          >
-                            <CheckCircle size={16} />
-                          </button>
-                          <button 
-                           onClick={() => copiarAlPortapapeles(generarMensaje(p), p)} 
-                           className={`p-1.5 rounded transition-all ${copiadoIdx === p.id ? 'bg-green-600 text-white' : 'text-green-600 hover:bg-green-50'}`}
-                           title="Copiar Texto"
-                          >
-                           {copiadoIdx === p.id ? <Check size={16} /> : <Copy size={16} />}
-                          </button>
-                          <button onClick={() => eliminarDeBandeja(p.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-all" title="Eliminar">
-                           <Trash2 size={16} />
-                          </button>
+                        <button 
+                          onClick={() => {
+                            setSelectedCitation(p);
+                            setIsModalOpen(true);
+                          }}
+                          className="p-1.5 text-pink-600 hover:bg-pink-50 rounded transition-all"
+                          title="Ver Citación Completa"
+                        >
+                          <Eye size={16} />
+                        </button>
+                        <button 
+                          onClick={() => handleDownloadWord(p)}
+                          className="p-1.5 text-blue-700 hover:bg-blue-50 rounded transition-all"
+                          title="Descargar Formato Word FPJ-35 (.docx)"
+                        >
+                          <FileDown size={16} />
+                        </button>
+                        <button 
+                          onClick={() => marcarComoCitado(p)}
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-all"
+                          title="Marcar como Citado (Mover a Citados)"
+                        >
+                          <CheckCircle size={16} />
+                        </button>
+                        <button 
+                          onClick={() => copiarAlPortapapeles(generarMensaje(p), p)} 
+                          className={`p-1.5 rounded transition-all ${copiadoIdx === p.id ? 'bg-green-600 text-white' : 'text-green-600 hover:bg-green-50'}`}
+                          title="Copiar Texto WhatsApp"
+                        >
+                          {copiadoIdx === p.id ? <Check size={16} /> : <Copy size={16} />}
+                        </button>
+                        <button 
+                          onClick={() => eliminarDeHistorial(p.id)} 
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-all" 
+                          title="Eliminar Citación"
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       </div>
                     </div>
                   </div>
                 ))
               )}
             </div>
+
+            {/* Controles de Paginación */}
+            <PaginationControls
+              totalItems={filteredPendientes.length}
+              currentPage={pagePendientes}
+              pageSize={pageSizePendientes}
+              onPageChange={setPagePendientes}
+              onPageSizeChange={setPageSizePendientes}
+              itemLabel="citaciones generadas"
+            />
           </div>
         </motion.div>
       )}
@@ -2222,46 +2551,48 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
           animate={{ opacity: 1, y: 0 }}
           className="space-y-6 pb-20"
         >
-          <div className="flex items-center justify-between">
-              <button 
-               onClick={() => {
-                 setActiveMode(null);
-                 setSearchTerm("");
-               }} 
-               className="flex items-center gap-2 text-text-muted hover:text-fgn-blue font-bold uppercase text-[10px] tracking-widest bg-white px-4 py-2 rounded border border-fgn-border shadow-sm transition-all"
-              >
-                <ArrowLeft size={14} strokeWidth={2} /> Volver al Inicio
-              </button>
-              <div className="flex-1 max-w-sm ml-6">
-                 <div className="relative">
-                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                   <input 
-                     type="text"
-                     placeholder="BUSCAR EN CITADOS..."
-                     value={searchTerm}
-                     onChange={(e) => setSearchTerm(e.target.value)}
-                     className="w-full bg-white border border-fgn-border rounded-lg py-2.5 pl-10 pr-4 text-xs font-bold text-green-600 placeholder:text-slate-300 outline-none focus:border-fgn-blue focus:ring-1 focus:ring-fgn-blue shadow-sm transition-all uppercase"
-                   />
-                 </div>
-               </div>
-              <h2 className="text-xl font-bold text-green-600 uppercase tracking-tight flex items-center gap-3">
-                <Check size={24} /> Listado de Citados (Enviados)
-              </h2>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <button 
+              onClick={() => {
+                setActiveMode(null);
+                setSearchTerm("");
+              }} 
+              className="flex items-center gap-2 text-text-muted hover:text-fgn-blue font-bold uppercase text-[10px] tracking-widest bg-white px-4 py-2 rounded border border-fgn-border shadow-sm transition-all w-fit"
+            >
+              <ArrowLeft size={14} strokeWidth={2} /> Volver al Inicio
+            </button>
+            <h2 className="text-xl font-bold text-green-600 uppercase tracking-tight flex items-center gap-3">
+              <Check size={24} /> Listado de Citados (Enviados)
+            </h2>
           </div>
+
+          {/* Filter Bar */}
+          <CitationFilterBar
+            filters={filtersCitados}
+            onFilterChange={handleFilterChangeCitados}
+            fiscalOptions={fiscalOptions}
+            showEstadoFilter={false}
+            showInformeFilter={true}
+            showAsistenciaFilter={true}
+            totalCount={citados.length}
+            filteredCount={filteredCitados.length}
+            placeholderSearch="BUSCAR EN CITADOS (NOMBRE, CÉDULA, ORDEN, FISCAL)..."
+          />
 
           <div className="bg-white rounded-xl border border-fgn-border overflow-hidden shadow-sm">
             <div className="bg-bg-gray px-6 py-3 border-b border-fgn-border grid grid-cols-12 gap-4 text-[9px] font-bold text-text-muted uppercase tracking-widest">
               <div className="col-span-3">PARTICIPANTE</div>
               <div className="col-span-2">ORDEN OPJ</div>
               <div 
-                className="col-span-3 flex items-center gap-1 cursor-pointer hover:text-fgn-blue transition-colors group"
+                className="col-span-2 flex items-center gap-1 cursor-pointer hover:text-fgn-blue transition-colors group"
                 onClick={toggleSort}
               >
                 FECHA Y HORA 
                 <ArrowUpDown size={12} className={sortConfig.direction === 'asc' ? 'text-fgn-blue' : 'text-slate-300'} />
               </div>
+              <div className="col-span-2 text-center">INFORME</div>
               <div className="col-span-2 text-center">ASISTENCIA</div>
-              <div className="col-span-2 text-right">ACCIONES</div>
+              <div className="col-span-1 text-right">ACCIONES</div>
             </div>
             
             <div className="divide-y divide-fgn-border/30">
@@ -2270,69 +2601,114 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                   <Search size={40} className="mx-auto text-slate-200 mb-2" />
                   <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">No hay citados en esta sesión</p>
                 </div>
+              ) : filteredCitados.length === 0 ? (
+                <div className="text-center py-20 bg-slate-50">
+                  <Search size={40} className="mx-auto text-slate-300 mb-2" />
+                  <p className="text-text-muted font-bold uppercase tracking-widest text-xs">
+                    No se encontraron personas citadas con los filtros aplicados
+                  </p>
+                </div>
               ) : (
-                getSortedList(applyFilters(citados)).map((p) => (
-                  <div key={p.id} className="group">
+                paginatedCitados.map((p) => (
+                  <div key={p.id} className="group hover:bg-slate-50 transition-colors">
                     <div className="px-6 py-4 grid grid-cols-12 gap-4 items-center">
                       <div className="col-span-3">
                         <p className="text-xs font-bold text-fgn-blue uppercase">
                           {p.nombre}{p.identificacion && p.identificacion.trim() ? ` con CC ${p.identificacion.trim()}` : ''}
                         </p>
+                        {p.fiscal && (
+                          <p className="text-[10px] text-slate-400 font-medium uppercase mt-0.5">
+                            Fiscalía {p.fiscal}
+                          </p>
+                        )}
                       </div>
                       <div className="col-span-2 font-mono text-[11px] text-text-muted uppercase">
                         {p.orden}
                       </div>
-                      <div className="col-span-3 font-mono text-[11px] text-fgn-blue flex flex-col">
+                      <div className="col-span-2 font-mono text-[11px] text-fgn-blue flex flex-col">
                         <span>{p.fecha ? formatDateES(p.fecha).toUpperCase() : '---'}</span>
                         {p.hora && <span className="text-[10px] text-fgn-gold font-bold">{formatTimeAMPM(p.hora)}</span>}
                       </div>
                       <div className="col-span-2 flex items-center justify-center gap-2">
-                          <button 
-                            onClick={() => marcarAsistencia(p.id, p.asistencia === 'asistio' ? null : 'asistio')}
-                            className={`p-1.5 rounded transition-all border ${p.asistencia === 'asistio' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-300 border-slate-200 hover:text-green-500 hover:border-green-500'}`}
-                            title="Marcó Asistencia"
-                          >
-                            <UserCheck size={14} />
-                          </button>
-                          <button 
-                            onClick={() => marcarAsistencia(p.id, p.asistencia === 'no_asistio' ? null : 'no_asistio')}
-                            className={`p-1.5 rounded transition-all border ${p.asistencia === 'no_asistio' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-300 border-slate-200 hover:text-red-500 hover:border-red-500'}`}
-                            title="No Asistió"
-                          >
-                            <UserX size={14} />
-                          </button>
+                        <button 
+                          onClick={() => marcarInforme(p.id, p.informe === 'si' ? null : 'si')}
+                          className={`p-1.5 rounded transition-all border ${p.informe === 'si' ? 'bg-fgn-blue text-white border-fgn-blue shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-fgn-blue hover:border-fgn-blue'}`}
+                          title={p.informe === 'si' ? 'Informe Realizado (Clic para desmarcar)' : 'Marcar con Informe'}
+                        >
+                          <FileCheck size={14} />
+                        </button>
+                        <button 
+                          onClick={() => marcarInforme(p.id, p.informe === 'no' ? null : 'no')}
+                          className={`p-1.5 rounded transition-all border ${p.informe === 'no' ? 'bg-slate-500 text-white border-slate-500 shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-slate-500 hover:border-slate-500'}`}
+                          title={p.informe === 'no' ? 'Marcado Sin Informe (Clic para desmarcar)' : 'Marcar Sin Informe'}
+                        >
+                          <FileX size={14} />
+                        </button>
                       </div>
-                      <div className="col-span-2 flex items-center justify-end gap-1">
-                          <button 
-                            onClick={() => {
-                              setSelectedCitation(p);
-                              setIsModalOpen(true);
-                            }}
-                            className="p-1.5 text-pink-600 hover:bg-pink-50 rounded transition-all"
-                            title="Ver Citación"
-                          >
-                            <Eye size={16} />
-                          </button>
-                          <button 
-                            onClick={() => handleDownloadWord(p)}
-                            className="p-1.5 text-blue-700 hover:bg-blue-50 rounded transition-all"
-                            title="Descargar Formato Word FPJ-35 (.docx)"
-                          >
-                            <FileDown size={16} />
-                          </button>
-                          <button 
-                            onClick={() => setCitados(prev => prev.filter(c => c.id !== p.id))} 
-                            className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-all" 
-                            title="Limpiar"
-                          >
-                           <Trash2 size={16} />
-                          </button>
+                      <div className="col-span-2 flex items-center justify-center gap-2">
+                        <button 
+                          onClick={() => marcarAsistencia(p.id, p.asistencia === 'asistio' ? null : 'asistio')}
+                          className={`p-1.5 rounded transition-all border ${p.asistencia === 'asistio' ? 'bg-green-600 text-white border-green-600 shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-green-500 hover:border-green-500'}`}
+                          title={p.asistencia === 'asistio' ? 'Asistió (Clic para desmarcar)' : 'Marcar Asistió'}
+                        >
+                          <UserCheck size={14} />
+                        </button>
+                        <button 
+                          onClick={() => marcarAsistencia(p.id, p.asistencia === 'no_asistio' ? null : 'no_asistio')}
+                          className={`p-1.5 rounded transition-all border ${p.asistencia === 'no_asistio' ? 'bg-red-600 text-white border-red-600 shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-red-500 hover:border-red-500'}`}
+                          title={p.asistencia === 'no_asistio' ? 'No Asistió (Clic para desmarcar)' : 'Marcar No Asistió'}
+                        >
+                          <UserX size={14} />
+                        </button>
+                      </div>
+                      <div className="col-span-1 flex items-center justify-end gap-1">
+                        <button 
+                          onClick={() => {
+                            setSelectedCitation(p);
+                            setIsModalOpen(true);
+                          }}
+                          className="p-1.5 text-pink-600 hover:bg-pink-50 rounded transition-all"
+                          title="Ver Citación"
+                        >
+                          <Eye size={16} />
+                        </button>
+                        <button 
+                          onClick={() => handleDownloadWord(p)}
+                          className="p-1.5 text-blue-700 hover:bg-blue-50 rounded transition-all"
+                          title="Descargar Formato Word FPJ-35 (.docx)"
+                        >
+                          <FileDown size={16} />
+                        </button>
+                        <button 
+                          onClick={() => copiarAlPortapapeles(generarMensaje(p), p)} 
+                          className={`p-1.5 rounded transition-all ${copiadoIdx === p.id ? 'bg-green-600 text-white' : 'text-green-600 hover:bg-green-50'}`}
+                          title="Copiar Texto WhatsApp"
+                        >
+                          {copiadoIdx === p.id ? <Check size={16} /> : <Copy size={16} />}
+                        </button>
+                        <button 
+                          onClick={() => eliminarDeHistorial(p.id)} 
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-all" 
+                          title="Eliminar Citación"
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       </div>
                     </div>
                   </div>
                 ))
               )}
             </div>
+
+            {/* Controles de Paginación */}
+            <PaginationControls
+              totalItems={filteredCitados.length}
+              currentPage={pageCitados}
+              pageSize={pageSizeCitados}
+              onPageChange={setPageCitados}
+              onPageSizeChange={setPageSizeCitados}
+              itemLabel="personas citadas"
+            />
           </div>
         </motion.div>
       )}

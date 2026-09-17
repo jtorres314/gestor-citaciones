@@ -12,6 +12,9 @@
         "unidad": { "type": "string", "description": "Unidad de la fiscalía (ej: Hurtos de la Ciudad de Cartagena)" },
         "fecha": { "type": "string", "format": "date", "description": "Fecha de la citación (YYYY-MM-DD)" },
         "hora": { "type": "string", "description": "Hora de la citación (HH:mm)" },
+        "estado": { "type": "string", "enum": ["pendiente", "citado"], "description": "Estado de la citación" },
+        "asistencia": { "type": "string", "enum": ["asistio", "no_asistio"], "description": "Estado de asistencia del citado" },
+        "informe": { "type": "string", "enum": ["si", "no"], "description": "Estado de informe de policía judicial" },
         "creadoEl": { "type": "string", "description": "Fecha de creación legible" },
         "creadoTimestamp": { "type": "number", "description": "Timestamp de creación para ordenamiento" }
       },

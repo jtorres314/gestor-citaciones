@@ -141,7 +141,25 @@ function cleanWordXmlTags(xml: string): string {
   return xml;
 }
 
-function replacePlaceholderWithDrawing(xml: string, placeholder: string, drawing: string): string {
+function escapeXml(str?: string): string {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function makeNormalRun(text: string): string {
+  return `<w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:sz w:val="22"/><w:szCs w:val="16"/></w:rPr><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>`;
+}
+
+function makeBoldUnderlineRun(text: string): string {
+  return `<w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:bCs/><w:u w:val="single"/><w:sz w:val="22"/><w:szCs w:val="16"/></w:rPr><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>`;
+}
+
+function replacePlaceholderWithRuns(xml: string, placeholder: string, replacementXml: string): string {
   let idx = xml.indexOf(placeholder);
   while (idx !== -1) {
     let pos = idx;
@@ -158,7 +176,7 @@ function replacePlaceholderWithDrawing(xml: string, placeholder: string, drawing
     }
     const endRun = xml.indexOf('</w:r>', idx);
     if (startRun !== -1 && endRun !== -1) {
-      xml = xml.substring(0, startRun) + drawing + xml.substring(endRun + 6);
+      xml = xml.substring(0, startRun) + replacementXml + xml.substring(endRun + 6);
       idx = xml.indexOf(placeholder);
     } else {
       break;
@@ -363,7 +381,7 @@ export async function generateFPJ35WordDocument(citation: CitationData): Promise
                           new TextRun({ text: " para ", size: 18, font: "Calibri" }),
                           new TextRun({ text: `${citation.motivo || 'rendir entrevista dentro de las diligencias investigativas relacionadas en el proceso'}`, bold: true, underline: {}, size: 18, font: "Calibri" }),
                           new TextRun({ text: ",\ndentro del proceso de la referencia (Fiscalía: ", size: 18, font: "Calibri" }),
-                          new TextRun({ text: `${citation.fiscal || '17 Local'}`, bold: true, size: 18, font: "Calibri" }),
+                          new TextRun({ text: `${citation.fiscal || '17 Local'}`, bold: true, underline: {}, size: 18, font: "Calibri" }),
                           new TextRun({ text: ").", size: 18, font: "Calibri" })
                         ]
                       })
@@ -904,6 +922,25 @@ export async function generateCitationFromTemplate(
       ? `Se solicita comparecer el próximo ${fechaComparecenciaTexto} a las ${horaComparecenciaTexto}, en las instalaciones de ${instalacionesTexto}, ubicadas en la ${direccionInstalacionesTexto} para ${motivoTexto}, dentro del proceso de la referencia.`
       : `Se solicita comparecer el próximo ${fechaComparecenciaTexto} a las ${horaComparecenciaTexto}, en las instalaciones de ${instalacionesTexto} para ${motivoTexto}, dentro del proceso de la referencia.`;
 
+    const motivoPlaceholder = '___MOTIVO_CITACION_RUNS___';
+
+    // Generar los TextRuns OpenXML con los datos obtenidos de campos en negrita y subrayados
+    const formattedMotivoRuns = [
+      makeNormalRun('Se solicita comparecer el próximo '),
+      makeBoldUnderlineRun(fechaComparecenciaTexto),
+      makeNormalRun(' a las '),
+      makeBoldUnderlineRun(horaComparecenciaTexto),
+      makeNormalRun(', en las instalaciones de '),
+      makeBoldUnderlineRun(instalacionesTexto),
+      ...(direccionInstalacionesTexto ? [
+        makeNormalRun(', ubicadas en la '),
+        makeBoldUnderlineRun(direccionInstalacionesTexto)
+      ] : []),
+      makeNormalRun(' para '),
+      makeBoldUnderlineRun(motivoTexto),
+      makeNormalRun(', dentro del proceso de la referencia.')
+    ].join('');
+
     const templateData: Record<string, string> = {
       NUNC: nunc,
       nunc: nunc,
@@ -942,15 +979,17 @@ export async function generateCitationFromTemplate(
       fecha: citation.fecha || '',
       HORA: citation.hora || '',
       hora: citation.hora || '',
-      // Clave unificada solicitada para englobar todos los campos de este párrafo
-      MOTIVO_CITACION: motivoCitacionParrafo,
-      motivo_citacion: motivoCitacionParrafo,
-      PARRAFO_CITACION: motivoCitacionParrafo,
-      parrafo_citacion: motivoCitacionParrafo,
-      TEXTO_CITACION: motivoCitacionParrafo,
-      texto_citacion: motivoCitacionParrafo,
-      COMPARECENCIA: motivoCitacionParrafo,
-      comparecencia: motivoCitacionParrafo,
+      // Clave unificada solicitada para englobar todos los campos de este párrafo (con campos en negrita y subrayados)
+      MOTIVO_CITACION: motivoPlaceholder,
+      motivo_citacion: motivoPlaceholder,
+      PARRAFO_CITACION: motivoPlaceholder,
+      parrafo_citacion: motivoPlaceholder,
+      TEXTO_CITACION: motivoPlaceholder,
+      texto_citacion: motivoPlaceholder,
+      COMPARECENCIA: motivoPlaceholder,
+      comparecencia: motivoPlaceholder,
+      MOTIVO_CITACION_PLANO: motivoCitacionParrafo,
+      motivo_citacion_plano: motivoCitacionParrafo,
       // Campos individuales preservados
       FECHA_COMPARECENCIA: fechaComparecenciaTexto,
       fechaComparecencia: fechaComparecenciaTexto,
@@ -1003,14 +1042,19 @@ export async function generateCitationFromTemplate(
 
     doc.render(templateData);
 
+    let renderedXml = doc.getZip().file('word/document.xml')?.asText() || '';
+
+    // Reemplazar marcador de motivo de citación por los TextRuns con los campos en negrita y subrayados
+    renderedXml = replacePlaceholderWithRuns(renderedXml, motivoPlaceholder, formattedMotivoRuns);
+
     // Si hay firma, reemplazar el marcador de posición por el elemento Drawing XML de OpenXML
     if (sigInfo) {
-      let renderedXml = doc.getZip().file('word/document.xml')?.asText() || '';
       const drawingXml = `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="1371600" cy="548640"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="9999" name="Firma Investigador"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="firma.${sigInfo.extension}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdSig" cstate="print"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1371600" cy="548640"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
 
-      renderedXml = replacePlaceholderWithDrawing(renderedXml, signaturePlaceholder, drawingXml);
-      doc.getZip().file('word/document.xml', renderedXml);
+      renderedXml = replacePlaceholderWithRuns(renderedXml, signaturePlaceholder, drawingXml);
     }
+
+    doc.getZip().file('word/document.xml', renderedXml);
 
     const out = doc.getZip().generate({
       type: 'blob',

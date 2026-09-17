@@ -19,7 +19,8 @@ service cloud.firestore {
              data.hora is string && data.hora.size() <= 10 &&
              data.creadoTimestamp is number &&
              (data.get('estado', 'pendiente') in ['pendiente', 'citado']) &&
-             (data.get('asistencia', null) == null || data.asistencia in ['asistio', 'no_asistio']);
+             (data.get('asistencia', null) == null || data.asistencia in ['asistio', 'no_asistio']) &&
+             (data.get('informe', null) == null || data.informe in ['si', 'no']);
     }
 
     // Default Deny
@@ -41,11 +42,15 @@ service cloud.firestore {
       allow update: if isOwner(userId) && isValidCitacion(incoming()) && 
                     (
                       // Option 1: Update metadata (nombre, fecha, etc)
-                      incoming().diff(resource.data).affectedKeys().hasOnly(['nombre', 'genero', 'orden', 'fiscal', 'unidad', 'fecha', 'hora']) ||
+                      incoming().diff(resource.data).affectedKeys().hasOnly(['nombre', 'genero', 'orden', 'fiscal', 'unidad', 'fecha', 'hora', 'telefono', 'identificacion', 'motivo', 'direccion', 'instalaciones', 'direccionInstalaciones', 'observaciones', 'requiereAbogado']) ||
                       // Option 2: Change status to 'citado'
                       incoming().diff(resource.data).affectedKeys().hasOnly(['estado']) ||
                       // Option 3: Mark attendance
-                      incoming().diff(resource.data).affectedKeys().hasOnly(['asistencia'])
+                      incoming().diff(resource.data).affectedKeys().hasOnly(['asistencia']) ||
+                      // Option 4: Mark judicial report (informe)
+                      incoming().diff(resource.data).affectedKeys().hasOnly(['informe']) ||
+                      // Option 5: Any combination of operational flags
+                      incoming().diff(resource.data).affectedKeys().hasOnly(['estado', 'asistencia', 'informe'])
                     );
       allow delete: if isOwner(userId);
     }
