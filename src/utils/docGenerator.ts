@@ -75,16 +75,44 @@ function formatDateFull(dateStr?: string): string {
 
 function formatTime12H(timeStr?: string): string {
   if (!timeStr) return '________';
+  const str = timeStr.trim();
+  if (!str) return '________';
   try {
-    const [h, m] = timeStr.split(':');
-    let hours = parseInt(h);
-    const minutes = m || '00';
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12;
-    hours = hours ? hours : 12;
-    return `${hours}:${minutes} ${ampm}`;
+    const matchWithAmPm = str.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM|am|pm)$/i);
+    if (matchWithAmPm) {
+      let hours = parseInt(matchWithAmPm[1], 10);
+      const minutes = matchWithAmPm[2];
+      const ampm = matchWithAmPm[3].toUpperCase();
+      if (hours === 0) hours = 12;
+      return `${hours}:${minutes} ${ampm}`;
+    }
+
+    const matchSimple = str.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (matchSimple) {
+      let hours = parseInt(matchSimple[1], 10);
+      const minutes = matchSimple[2];
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      return `${hours}:${minutes} ${ampm}`;
+    }
+
+    if (str.includes(':')) {
+      const parts = str.split(':');
+      let hours = parseInt(parts[0], 10);
+      const rest = parts[1].trim();
+      const numMin = rest.replace(/[^0-9]/g, '').slice(0, 2) || '00';
+      const hasPM = /pm/i.test(str);
+      const hasAM = /am/i.test(str);
+      const ampm = hasPM ? 'PM' : hasAM ? 'AM' : (hours >= 12 ? 'PM' : 'AM');
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      return `${hours}:${numMin} ${ampm}`;
+    }
+
+    return str;
   } catch (e) {
-    return timeStr;
+    return str;
   }
 }
 

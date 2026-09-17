@@ -39,11 +39,11 @@ const SPANISH_MONTHS: Record<string, string> = {
 
 export const parseExcelDate = (val: any): string => {
   if (val === null || val === undefined) {
-    return new Date().toISOString().split('T')[0];
+    return '';
   }
   const str = String(val).trim();
   if (!str) {
-    return new Date().toISOString().split('T')[0];
+    return '';
   }
 
   // ISO date YYYY-MM-DD
@@ -106,13 +106,13 @@ export const parseExcelDate = (val: any): string => {
     return parsed.toISOString().split('T')[0];
   }
 
-  return new Date().toISOString().split('T')[0];
+  return str;
 };
 
 export const parseExcelTime = (val: any): string => {
-  if (val === null || val === undefined) return '08:30 AM';
+  if (val === null || val === undefined) return '';
   const str = String(val).trim();
-  if (!str) return '08:30 AM';
+  if (!str) return '';
 
   // Format 08:30 AM or 8:30 PM
   const ampmMatch = str.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM|am|pm)$/i);
@@ -249,8 +249,8 @@ export const createEmptyRow = (): ExcelInsumoRow => ({
   direccion: '',
   telefono: '',
   correo: '',
-  fecha: new Date().toISOString().split('T')[0],
-  hora: '08:30 AM',
+  fecha: '',
+  hora: '',
   generada: false
 });
 
@@ -506,7 +506,7 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
       const ot = getCol(colMap.ot);
       const opj = getCol(colMap.opj);
       const nunc = getCol(colMap.nunc);
-      const fiscal = getCol(colMap.fiscal) || '17 Local';
+      const fiscal = getCol(colMap.fiscal);
       const nombre = getCol(colMap.nombre);
       const cedula = getCol(colMap.cedula);
       const direccion = getCol(colMap.direccion);
@@ -516,17 +516,16 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
       const rawHora = getCol(colMap.hora);
 
       // Verificar que no sea una fila fantasma o sin ningún identificador
-      if (!nombre && !opj && !ot && !nunc && !cedula) {
-        structuralError = `La fila ${rowDisplayNum} no contiene ningún identificador esencial de citación (Nombre, OPJ, NUNC, OT o Cédula vacíos).`;
+      if (!nombre && !opj && !ot && !nunc && !cedula && !direccion && !telefono && !correo) {
+        structuralError = `La fila ${rowDisplayNum} no contiene datos de citación.`;
         break;
       }
 
-      // Parsear fecha y hora de forma robusta a formato ISO YYYY-MM-DD y HH:MM AM/PM
-      const fecha = parseExcelDate(rawFecha);
+      // Parsear fecha y hora respetando los datos exactos del usuario
+      const fecha = rawFecha ? parseExcelDate(rawFecha) : '';
       
-      // Si la hora está en la fecha (ej: 25/03/2026 09:30) y rawHora está vacía, intentar extraerla
-      let hora = rawHora ? parseExcelTime(rawHora) : '08:30 AM';
-      if (!rawHora && rawFecha && /\d{1,2}:\d{2}/.test(rawFecha)) {
+      let hora = rawHora ? parseExcelTime(rawHora) : '';
+      if (!hora && rawFecha && /\d{1,2}:\d{2}/.test(rawFecha)) {
         const timeExtract = rawFecha.match(/\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:AM|PM|am|pm))?/);
         if (timeExtract) {
           hora = parseExcelTime(timeExtract[0]);
@@ -673,7 +672,7 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
           const rawFecha = getCol(colMap.fecha);
           const rawHora = getCol(colMap.hora);
 
-          let hora = rawHora ? parseExcelTime(rawHora) : '08:30 AM';
+          let hora = rawHora ? parseExcelTime(rawHora) : '';
           if (!rawHora && rawFecha && /\d{1,2}:\d{2}/.test(rawFecha)) {
             const timeExtract = rawFecha.match(/\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:AM|PM|am|pm))?/);
             if (timeExtract) {
@@ -686,17 +685,17 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
             ot: getCol(colMap.ot),
             opj: getCol(colMap.opj),
             nunc: getCol(colMap.nunc),
-            fiscal: getCol(colMap.fiscal) || '17 Local',
+            fiscal: getCol(colMap.fiscal),
             nombre: getCol(colMap.nombre),
             cedula: getCol(colMap.cedula),
             direccion: getCol(colMap.direccion),
             telefono: getCol(colMap.telefono),
             correo: getCol(colMap.correo),
-            fecha: parseExcelDate(rawFecha),
+            fecha: rawFecha ? parseExcelDate(rawFecha) : '',
             hora: hora,
             generada: false // Nuevas filas se marcan como pendientes
           };
-        }).filter(r => r.nombre || r.opj || r.ot || r.nunc || r.cedula);
+        }).filter(r => r.nombre || r.opj || r.ot || r.nunc || r.cedula || r.direccion || r.telefono || r.correo);
 
         if (newRows.length > 0) {
           onRowsChange([...rows, ...newRows]);

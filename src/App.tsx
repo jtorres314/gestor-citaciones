@@ -225,14 +225,14 @@ const App = () => {
         if (Array.isArray(parsed)) {
           return parsed.map(r => ({
             ...r,
-            fecha: parseExcelDate(r.fecha),
-            hora: parseExcelTime(r.hora)
+            fecha: r.fecha ? parseExcelDate(r.fecha) : '',
+            hora: r.hora ? parseExcelTime(r.hora) : ''
           }));
         }
       }
-      return SAMPLE_EXCEL_ROWS;
+      return [];
     } catch (e) {
-      return SAMPLE_EXCEL_ROWS;
+      return [];
     }
   });
 
@@ -669,13 +669,43 @@ const App = () => {
   };
 
   const formatTimeAMPM = (timeStr: string) => {
-    if (!timeStr || !timeStr.includes(':')) return timeStr;
-    let [hoursStr, minutes] = timeStr.split(':');
-    let hours = parseInt(hoursStr);
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12;
-    hours = hours ? hours : 12;
-    return `${hours}:${minutes} ${ampm}`;
+    if (!timeStr) return '';
+    const str = timeStr.trim();
+    if (!str) return '';
+
+    const matchWithAmPm = str.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM|am|pm)$/i);
+    if (matchWithAmPm) {
+      let hours = parseInt(matchWithAmPm[1], 10);
+      const minutes = matchWithAmPm[2];
+      const ampm = matchWithAmPm[3].toUpperCase();
+      if (hours === 0) hours = 12;
+      return `${hours}:${minutes} ${ampm}`;
+    }
+
+    const matchSimple = str.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (matchSimple) {
+      let hours = parseInt(matchSimple[1], 10);
+      const minutes = matchSimple[2];
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      return `${hours}:${minutes} ${ampm}`;
+    }
+
+    if (str.includes(':')) {
+      const parts = str.split(':');
+      let hours = parseInt(parts[0], 10);
+      const rest = parts[1].trim();
+      const numMin = rest.replace(/[^0-9]/g, '').slice(0, 2) || '00';
+      const hasPM = /pm/i.test(str);
+      const hasAM = /am/i.test(str);
+      const ampm = hasPM ? 'PM' : hasAM ? 'AM' : (hours >= 12 ? 'PM' : 'AM');
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      return `${hours}:${numMin} ${ampm}`;
+    }
+
+    return str;
   };
 
   const registrarCitacion = async (data: any) => {
@@ -1331,23 +1361,36 @@ const App = () => {
 
   const generarMensaje = (p: any) => {
     const trato = p.genero === "Femenino" ? "Señora" : p.genero === "Masculino" ? "Señor" : "Señor(a)";
+    const nombre = (p.nombre || 'CIUDADANO').toUpperCase().trim();
     const fechaFormateada = formatDateES(p.fecha);
     const horaFormateada = formatTimeAMPM(p.hora);
     
-    // Prefer data captured at creation for consistency
-    const oficina = p.oficina_creador || config.oficina;
-    const telefono = p.telefono_creador || config.telefono;
-    const investigador = p.investigador_creador || config.investigador;
+    // Instalaciones y dirección completa
+    const baseInstalaciones = (p.instalaciones || p.oficina_creador || config.instalaciones || config.oficina || 'Fiscalía General de la Nación - Unidad de Patrimonio Económico').trim();
+    const dirInstalaciones = (p.direccionInstalaciones || config.direccionInstalaciones || '').trim();
+    const lugarCompleto = dirInstalaciones && !baseInstalaciones.toLowerCase().includes(dirInstalaciones.toLowerCase())
+      ? `${baseInstalaciones} - ${dirInstalaciones}`
+      : baseInstalaciones;
 
-    const nombreFormateado = p.identificacion && p.identificacion.trim()
-      ? `${p.nombre.toUpperCase()} con CC ${p.identificacion.trim()}`
-      : p.nombre.toUpperCase();
+    // Fiscal, Unidad, Ciudad, Orden y Caso
+    const rawFiscal = (p.fiscal || '17 Local').trim();
+    const fiscalLimpio = rawFiscal.replace(/^Fiscal\s+/i, '').trim();
 
-    return `Buenas ${trato} ${nombreFormateado}, este mensaje es con el fin de realizarle citación para el día ${fechaFormateada} a las ${horaFormateada} en la ${oficina}, a diligencia de entrevista ordenada por el Fiscal ${p.fiscal} de la Unidad de ${p.unidad} dentro de la Orden a Policía judicial No. ${p.orden}.
+    const rawUnidad = (p.unidad || p.grupoInvestigador || config.grupoInvestigador || 'Hurtos').trim();
+    const unidadLimpia = rawUnidad.replace(/^Unidad\s+(de\s+)?/i, '').trim();
 
-Esta diligencia se requiere para que usted amplié las circunstancias de tiempo, modo y lugar, en la que ocurrieron los hechos en los que usted resulto como victima, y se requiere que por favor traiga los documentos que acrediten la cuantía de las totalidad del dinero hurtado.
+    const ciudad = (p.ciudad || p.municipio || config.municipio || 'Cartagena').trim();
+    const orden = (p.orden || p.opj || p.ot || '13427245').trim();
+    const casoTexto = p.nunc ? ` - Caso ${p.nunc.trim()}` : '';
 
-Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsApp) y preguntar por el Investigador ${investigador}.`;
+    const telefono = (p.telefono_creador || config.telefono || '3176491486').trim();
+    const investigador = (p.investigador_creador || config.investigador || 'Investigador Judicial').trim();
+
+    return `Buenas ${trato} ${nombre}, este mensaje es con el fin de realizarle citación para el día ${fechaFormateada} a las ${horaFormateada} en la ${lugarCompleto}, a diligencia de entrevista ordenada por el Fiscal ${fiscalLimpio} de la Unidad de ${unidadLimpia} de la Ciudad de ${ciudad} dentro de la Orden a Policía judicial No. ${orden}${casoTexto}.
+
+Esta diligencia se requiere para que usted amplié las circunstancias de tiempo, modo y lugar, en la que ocurrieron los hechos en los que usted resulto como víctima, y se requiere que por favor traiga los documentos que acrediten la cuantía del detrimento patrimonial ocasionado.
+
+Por favor comunicarse lo antes posible a el numero ${telefono} (WhatsApp) y preguntar por el Investigador ${investigador}.`;
   };
 
   const copiarAlPortapapeles = async (texto: string, item: any) => {
