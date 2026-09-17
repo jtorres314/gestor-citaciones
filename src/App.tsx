@@ -9,14 +9,16 @@ import {
   Trash2, Plus, Sparkles, FileDown, Download, Phone, Mail, MapPin, Briefcase,
   Wand2, BrainCircuit, Loader2, FileUp, X, Check,
   History, Search, ArrowLeft, LogOut, Eye, ArrowUpDown,
-  UserCheck, UserX, UserMinus, CheckCircle, RefreshCw, FileCode, PenTool
+  UserCheck, UserX, UserMinus, CheckCircle, RefreshCw, FileCode, PenTool,
+  FileSpreadsheet
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { generateFPJ35WordDocument, generateCitationFromTemplate, downloadWordDocument } from './utils/docGenerator';
-import { Citacion, CitacionFilters, PageSizeOption } from './types';
+import { Citacion, CitacionFilters, PageSizeOption, ExcelInsumoRow } from './types';
 import { CitationFilterBar } from './components/CitationFilterBar';
 import { PaginationControls } from './components/PaginationControls';
 import { filterCitations, paginateList, getUniqueFiscales } from './utils/filterUtils';
+import { ExcelMatrixView, SAMPLE_EXCEL_ROWS } from './components/ExcelMatrixView';
 
 // Firebase Imports
 import { initializeApp } from 'firebase/app';
@@ -33,6 +35,77 @@ import firebaseConfig from '../firebase-applet-config.json';
 
 // Gemini AI SDK
 import { GoogleGenAI, Type } from "@google/genai";
+import Swal from 'sweetalert2';
+import 'sweetalert2/dist/sweetalert2.min.css';
+
+// Institutional SweetAlert Helpers
+const showRedAuthErrorAlert = (title: string, message: string, code?: string) => {
+  return Swal.fire({
+    icon: 'error',
+    iconColor: '#dc2626',
+    title: `<span style="color: #dc2626; font-weight: 800; font-size: 1.25rem;">${title}</span>`,
+    html: `
+      <div style="text-align: center; margin-top: 6px;">
+        <div style="background-color: #fef2f2; border: 1.5px solid #f87171; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; text-align: left;">
+          <p style="color: #991b1b; font-weight: 600; font-size: 13px; margin: 0; line-height: 1.45;">
+            ${message}
+          </p>
+          ${code ? `<p style="color: #b91c1c; font-size: 11px; margin-top: 6px; margin-bottom: 0; font-family: monospace; font-weight: 600;">Detalle de error: ${code}</p>` : ''}
+        </div>
+        <p style="color: #475569; font-size: 12px; line-height: 1.4; margin: 0;">
+          Para trabajar de forma inmediata sin depender de la cuenta Google, puede hacer clic en <b>Ingresar como Invitado</b>.
+        </p>
+      </div>
+    `,
+    confirmButtonColor: '#dc2626',
+    confirmButtonText: 'Entendido',
+    background: '#ffffff',
+    customClass: {
+      popup: 'rounded-xl shadow-2xl border border-red-200',
+      confirmButton: 'px-5 py-2.5 rounded font-bold text-xs uppercase tracking-wider shadow-sm'
+    }
+  });
+};
+
+const showRedErrorAlert = (title: string, message: string) => {
+  return Swal.fire({
+    icon: 'error',
+    iconColor: '#dc2626',
+    title: `<span style="color: #dc2626; font-weight: 700; font-size: 1.15rem;">${title}</span>`,
+    text: message,
+    confirmButtonColor: '#dc2626',
+    confirmButtonText: 'Aceptar',
+    customClass: {
+      popup: 'rounded-xl shadow-xl border border-red-100'
+    }
+  });
+};
+
+const showSuccessToast = (title: string) => {
+  return Swal.fire({
+    toast: true,
+    position: 'top-end',
+    icon: 'success',
+    iconColor: '#16a34a',
+    title: `<span style="font-size: 13px; font-weight: 600; color: #1e293b;">${title}</span>`,
+    showConfirmButton: false,
+    timer: 2500,
+    timerProgressBar: true
+  });
+};
+
+const showInfoToast = (title: string) => {
+  return Swal.fire({
+    toast: true,
+    position: 'top-end',
+    icon: 'info',
+    iconColor: '#003366',
+    title: `<span style="font-size: 13px; font-weight: 600; color: #1e293b;">${title}</span>`,
+    showConfirmButton: false,
+    timer: 2500,
+    timerProgressBar: true
+  });
+};
 
 // Initialize Firebase with fallback to environment variables for Vercel deployment
 const finalFirebaseConfig = {
@@ -53,47 +126,43 @@ const appId = 'citaciones-judiciales-app';
 // Initialize Gemini
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+const DEFAULT_CONFIG = {
+  investigador: "Investigador Judicial",
+  entidadInvestigador: "CTI / Fiscalía General de la Nación",
+  grupoInvestigador: "Unidad de Patrimonio Económico",
+  correoInvestigador: "contacto.investigacion@fiscalia.gov.co",
+  telefono: "3000000000",
+  oficina: "Fiscalía General de la Nación - Unidad de Patrimonio Económico",
+  departamento: "Bolívar",
+  municipio: "Cartagena",
+  instalaciones: "Fiscalía General de la Nación - Sede Canapote",
+  direccionInstalaciones: "Cra. 17 # 32-10, Barrio Canapote",
+  firmaInvestigador: ""
+};
+
 const App = () => {
   // Navigation & Auth States
   const [user, setUser] = useState<any>(null);
   const [activeMode, setActiveMode] = useState<string | null>(null);
+  const [isLoggingInGoogle, setIsLoggingInGoogle] = useState(false);
+  const isLoggingInRef = useRef(false);
 
   // Configuration States (Investigator Profile - Section 2 FPJ-35)
+  // Kept completely independent between Guest (localStorage) and Google User (Firestore)
   const [config, setConfig] = useState(() => {
-    const saved = typeof window !== 'undefined' ? localStorage.getItem('fgn_investigator_config') : null;
+    if (typeof window === 'undefined') return DEFAULT_CONFIG;
+    const isGuest = localStorage.getItem('fgn_guest_session') === 'true';
+    const storageKey = isGuest ? 'fgn_guest_config' : 'fgn_investigator_config';
+    const saved = localStorage.getItem(storageKey);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        return {
-          investigador: parsed.investigador || "Investigador Judicial",
-          entidadInvestigador: parsed.entidadInvestigador || "CTI / Fiscalía General de la Nación",
-          grupoInvestigador: parsed.grupoInvestigador || "Unidad de Patrimonio Económico",
-          correoInvestigador: parsed.correoInvestigador || "contacto.investigacion@fiscalia.gov.co",
-          telefono: parsed.telefono || "3000000000",
-          oficina: parsed.oficina || "Fiscalía General de la Nación - Unidad de Patrimonio Económico",
-          departamento: parsed.departamento || "Bolívar",
-          municipio: parsed.municipio || "Cartagena",
-          instalaciones: parsed.instalaciones || "Fiscalía General de la Nación - Sede Canapote",
-          direccionInstalaciones: parsed.direccionInstalaciones || "Cra. 17 # 32-10, Barrio Canapote",
-          firmaInvestigador: parsed.firmaInvestigador || ""
-        };
+        return { ...DEFAULT_CONFIG, ...parsed };
       } catch (e) {
         console.error("Error cargando configuración guardada:", e);
       }
     }
-    return {
-      investigador: "Investigador Judicial",
-      entidadInvestigador: "CTI / Fiscalía General de la Nación",
-      grupoInvestigador: "Unidad de Patrimonio Económico",
-      correoInvestigador: "contacto.investigacion@fiscalia.gov.co",
-      telefono: "3000000000",
-      oficina: "Fiscalía General de la Nación - Unidad de Patrimonio Económico",
-      departamento: "Bolívar",
-      municipio: "Cartagena",
-      instalaciones: "Fiscalía General de la Nación - Sede Canapote",
-      direccionInstalaciones: "Cra. 17 # 32-10, Barrio Canapote",
-      firmaInvestigador: ""
-    };
+    return DEFAULT_CONFIG;
   });
 
   // Data States
@@ -146,6 +215,24 @@ const App = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Insumo Hoja de Cálculo (Excel)
+  const [excelRows, setExcelRows] = useState<ExcelInsumoRow[]>(() => {
+    try {
+      const saved = localStorage.getItem('sicij_excel_matrix');
+      return saved !== null ? JSON.parse(saved) : SAMPLE_EXCEL_ROWS;
+    } catch (e) {
+      return SAMPLE_EXCEL_ROWS;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sicij_excel_matrix', JSON.stringify(excelRows));
+    } catch (e) {
+      console.error("Error al guardar filas de Excel en localStorage:", e);
+    }
+  }, [excelRows]);
 
   // Independent Filter & Pagination States for each view
   const [filtersPendientes, setFiltersPendientes] = useState<CitacionFilters>({
@@ -270,47 +357,31 @@ const App = () => {
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (u) => {
       if (u) {
+        // Authenticated Google User
         setUser(u);
-        
-        // Migrate any local guest citations if the user just signed in with Google
-        try {
-          const guestData = localStorage.getItem('fgn_guest_historial');
-          if (guestData) {
-            const guestItems = JSON.parse(guestData);
-            if (Array.isArray(guestItems) && guestItems.length > 0) {
-              const historialRef = collection(db, 'artifacts', appId, 'users', u.uid, 'historial');
-              for (const item of guestItems) {
-                const { id, ...cleanItem } = item;
-                await addDoc(historialRef, cleanItem);
-              }
-            }
-            localStorage.removeItem('fgn_guest_historial');
-          }
-        } catch (migErr) {
-          console.warn("Guest data migration skipped:", migErr);
-        }
-
         localStorage.removeItem('fgn_guest_session');
         
-        // Load Profile from Firestore & Sync with localStorage
+        // Note: Strict independence - NO migration of guest data!
+        // Guest data remains stored exclusively in browser localStorage ('fgn_guest_historial')
+        // and is never mixed into the Google user's Firestore database.
+
+        // Load Profile for this Google user from Firestore
         try {
           const userDoc = await getDocFromServer(doc(db, 'users', u.uid));
           if (userDoc.exists() && userDoc.data().config) {
             const remoteConfig = userDoc.data().config;
-            setConfig(prev => {
-              const merged = { ...prev, ...remoteConfig };
-              try {
-                localStorage.setItem('fgn_investigator_config', JSON.stringify(merged));
-              } catch (err) {}
-              return merged;
-            });
+            setConfig({ ...DEFAULT_CONFIG, ...remoteConfig });
+            try {
+              localStorage.setItem(`fgn_google_config_${u.uid}`, JSON.stringify(remoteConfig));
+            } catch (err) {}
           } else {
-            // Initial save of local config to Firestore
+            // Initial save of config to Firestore for this Google account
             await setDoc(doc(db, 'users', u.uid), {
               lastSeen: new Date().toISOString(),
-              email: u.email || 'anonymous',
-              config: config
+              email: u.email || 'investigador',
+              config: DEFAULT_CONFIG
             }, { merge: true });
+            setConfig(DEFAULT_CONFIG);
           }
         } catch (e) {
           console.warn("User data loading/sync skipped", e);
@@ -321,6 +392,19 @@ const App = () => {
         if (isGuestSession) {
           const guestUid = localStorage.getItem('fgn_guest_uid') || `guest_${Date.now()}`;
           localStorage.setItem('fgn_guest_uid', guestUid);
+
+          // Load independent guest profile from localStorage
+          try {
+            const guestConfig = localStorage.getItem('fgn_guest_config');
+            if (guestConfig) {
+              setConfig({ ...DEFAULT_CONFIG, ...JSON.parse(guestConfig) });
+            } else {
+              setConfig(DEFAULT_CONFIG);
+            }
+          } catch (e) {
+            setConfig(DEFAULT_CONFIG);
+          }
+
           setUser({
             uid: guestUid,
             isAnonymous: true,
@@ -349,31 +433,96 @@ const App = () => {
   }, []);
 
   const handleGoogleLogin = async () => {
+    if (isLoggingInRef.current) return;
+    isLoggingInRef.current = true;
+    setIsLoggingInGoogle(true);
+
     const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({
+      prompt: 'select_account'
+    });
+
     try {
+      // Clear in-memory lists before switching to Google account to ensure clean separation
+      setPersonas([]);
+      setCitados([]);
+      setHistorial([]);
       await signInWithPopup(auth, provider);
+      showSuccessToast('Sesión iniciada con Google');
     } catch (error: any) {
       console.error("Error signing in with Google:", error);
-      alert("Error al iniciar sesión con Google. Por favor, intente de nuevo.");
+
+      if (error?.code === 'auth/popup-blocked') {
+        showRedAuthErrorAlert(
+          "Ventana Emergente Bloqueada",
+          "El navegador bloqueó la ventana emergente de inicio de sesión de Google. Habilite las ventanas emergentes (pop-ups) en la barra de direcciones o abra la aplicación en una pestaña nueva.",
+          error?.code
+        );
+      } else if (
+        error?.code === 'auth/cancelled-popup-request' || 
+        error?.code === 'auth/popup-closed-by-user'
+      ) {
+        showRedAuthErrorAlert(
+          "Inicio de Sesión Interrumpido",
+          "La ventana emergente de Google fue cerrada o cancelada antes de finalizar la autenticación.",
+          error?.code
+        );
+      } else if (error?.code === 'auth/unauthorized-domain') {
+        showRedAuthErrorAlert(
+          "Dominio no Autorizado en Firebase",
+          "El dominio actual no está habilitado en Firebase Authentication > Settings > Dominios autorizados.",
+          error?.code
+        );
+      } else {
+        showRedAuthErrorAlert(
+          "Error al Iniciar Sesión",
+          error?.message || "Ocurrió un error inesperado al intentar autenticar con la cuenta de Google.",
+          error?.code
+        );
+      }
+    } finally {
+      isLoggingInRef.current = false;
+      setIsLoggingInGoogle(false);
     }
   };
 
   const handleGuestLogin = async () => {
-    try {
-      // First attempt native Firebase Anonymous sign-in if enabled
-      const cred = await signInAnonymously(auth);
-      if (cred?.user) {
-        localStorage.removeItem('fgn_guest_session');
-        return;
-      }
-    } catch (error: any) {
-      console.info("Anonymous auth via Firebase unavailable, activating Local Guest Session mode:", error?.code || error?.message);
+    // If currently signed into Firebase with Google, sign out first to ensure complete data isolation
+    if (auth.currentUser) {
+      try {
+        await signOut(auth);
+      } catch (e) {}
     }
 
-    // Seamless fallback to Local Guest Session: 100% operational immediately
     const guestUid = localStorage.getItem('fgn_guest_uid') || `guest_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     localStorage.setItem('fgn_guest_uid', guestUid);
     localStorage.setItem('fgn_guest_session', 'true');
+
+    // Load independent guest profile from localStorage
+    try {
+      const guestConfig = localStorage.getItem('fgn_guest_config');
+      if (guestConfig) {
+        setConfig({ ...DEFAULT_CONFIG, ...JSON.parse(guestConfig) });
+      } else {
+        setConfig(DEFAULT_CONFIG);
+      }
+    } catch (e) {
+      setConfig(DEFAULT_CONFIG);
+    }
+
+    // Load independent guest history strictly from localStorage
+    try {
+      const stored = localStorage.getItem('fgn_guest_historial');
+      const docs = stored ? JSON.parse(stored) : [];
+      const sorted = docs.sort((a: any, b: any) => (b.creadoTimestamp || 0) - (a.creadoTimestamp || 0));
+      setHistorial(sorted);
+      setPersonas(sorted.filter((d: any) => !d.estado || d.estado === 'pendiente'));
+      setCitados(sorted.filter((d: any) => d.estado === 'citado'));
+      setHasInitializedPendientes(true);
+    } catch (e) {
+      console.error("Error reading local guest history:", e);
+    }
+
     setUser({
       uid: guestUid,
       isAnonymous: true,
@@ -381,9 +530,26 @@ const App = () => {
       displayName: 'Funcionario Invitado',
       email: null
     });
+    showSuccessToast('Ingreso en Modo Invitado local');
   };
 
   const handleLogout = async () => {
+    const result = await Swal.fire({
+      title: '¿Cerrar Sesión?',
+      text: user?.isLocalGuest 
+        ? 'Saldrá del Modo Invitado. Sus datos locales permanecerán guardados en este navegador.' 
+        : 'Se cerrará su sesión de Google.',
+      icon: 'question',
+      iconColor: '#003366',
+      showCancelButton: true,
+      confirmButtonColor: '#003366',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: 'Sí, cerrar sesión',
+      cancelButtonText: 'Cancelar',
+      reverseButtons: true
+    });
+    if (!result.isConfirmed) return;
+
     localStorage.removeItem('fgn_guest_session');
     if (auth.currentUser) {
       try {
@@ -394,17 +560,28 @@ const App = () => {
     setPersonas([]);
     setCitados([]);
     setHistorial([]);
+    setConfig(DEFAULT_CONFIG);
+    showInfoToast('Sesión finalizada');
   };
 
-  // Persist Profile Changes (localStorage + Firestore)
+  // Persist Profile Changes independently (Guest in localStorage, Google in Firestore)
   useEffect(() => {
-    try {
-      localStorage.setItem('fgn_investigator_config', JSON.stringify(config));
-    } catch (e) {
-      console.error("Error saving profile to localStorage:", e);
+    if (!user) return;
+
+    if (user.isLocalGuest) {
+      try {
+        localStorage.setItem('fgn_guest_config', JSON.stringify(config));
+      } catch (e) {
+        console.error("Error saving guest profile to localStorage:", e);
+      }
+      return;
     }
 
-    if (!user || user.isLocalGuest) return;
+    // Google authenticated user: save to Firestore & cached localStorage
+    try {
+      localStorage.setItem(`fgn_google_config_${user.uid}`, JSON.stringify(config));
+    } catch (e) {}
+
     const saveConfig = async () => {
       try {
         await setDoc(doc(db, 'users', user.uid), { config }, { merge: true });
@@ -546,6 +723,125 @@ const App = () => {
     }
   };
 
+  const generarCitacionesDesdeExcel = async () => {
+    if (!user) {
+      setIsModalOpen(true);
+      return;
+    }
+
+    const pendingRows = excelRows.filter(r => !r.generada);
+
+    if (excelRows.length === 0) {
+      showRedErrorAlert(
+        "Hoja de Cálculo Vacía",
+        "No hay datos almacenados en la hoja de cálculo. Ingrese a la Hoja de Cálculo para cargar las filas de insumo."
+      );
+      return;
+    }
+
+    if (pendingRows.length === 0) {
+      showRedErrorAlert(
+        "Sin Citaciones Pendientes",
+        "Todas las filas en la hoja de cálculo ya han sido generadas previamente. Ingrese o pegue nueva información en la tabla para generar citaciones adicionales."
+      );
+      return;
+    }
+
+    const count = pendingRows.length;
+    const confirmResult = await Swal.fire({
+      title: `<span style="color: #003366; font-weight: 800;">¿Generar ${count} Citaciones?</span>`,
+      html: `
+        <div style="text-align: left; font-size: 13px; color: #334155; line-height: 1.6;">
+          <p style="margin: 0 0 10px 0;">Se tomarán las <b>${count} filas pendientes</b> detectadas en la hoja de cálculo y se creará una citación judicial oficial para cada una.</p>
+          <div style="padding: 10px 14px; background-color: #f1f5f9; border-left: 4px solid #003366; border-radius: 6px;">
+            <p style="margin: 0; font-weight: 600; color: #003366;">⚡ Control de Generación:</p>
+            <p style="margin: 4px 0 0 0; color: #475569; font-size: 12px;">Una vez generadas, estas filas quedarán marcadas en la tabla con la columna <b>GENERADA: SÍ</b>. Al agregar o pegar nuevas filas en el futuro, el sistema reconocerá automáticamente solo las pendientes.</p>
+          </div>
+        </div>
+      `,
+      icon: 'question',
+      iconColor: '#003366',
+      showCancelButton: true,
+      confirmButtonColor: '#003366',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: `Sí, generar ${count} citaciones`,
+      cancelButtonText: 'Cancelar'
+    });
+
+    if (!confirmResult.isConfirmed) return;
+
+    setLoadingText(`Generando ${count} citaciones desde Hoja de Cálculo...`);
+    setLoadingIA(true);
+
+    try {
+      for (const row of pendingRows) {
+        const citacionData = {
+          ot: row.ot?.trim() || '',
+          orden: row.opj?.trim() || row.ot?.trim() || 'Sin Orden',
+          nunc: row.nunc?.trim() || '',
+          fiscal: row.fiscal?.trim() || '17 Local',
+          nombre: row.nombre?.trim() || 'CIUDADANO POR CITAR',
+          identificacion: row.cedula?.trim() || '',
+          direccion: row.direccion?.trim() || '',
+          telefono: row.telefono?.trim() || '',
+          correo: row.correo?.trim() || '',
+          fecha: row.fecha?.trim() || getTodayDateStr(),
+          hora: row.hora?.trim() || getCurrentTimeStr(),
+          genero: 'Femenino',
+          ciudad: config.municipio || 'Cartagena',
+          unidad: config.grupoInvestigador || 'Unidad de Patrimonio Económico',
+          instalaciones: config.instalaciones || 'Fiscalía General de la Nación - Sede Canapote',
+          direccionInstalaciones: config.direccionInstalaciones || '',
+          motivo: 'Entrevista',
+          requiereAbogado: 'NO',
+          observaciones: DEFAULT_OBSERVACIONES
+        };
+        await registrarCitacion(citacionData);
+      }
+
+      // Marcar las filas procesadas como generadas en la hoja de cálculo
+      const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const updatedRows = excelRows.map(row => {
+        if (!row.generada) {
+          return {
+            ...row,
+            generada: true,
+            fechaGeneracion: nowStr
+          };
+        }
+        return row;
+      });
+
+      setExcelRows(updatedRows);
+      try {
+        localStorage.setItem('sicij_excel_matrix', JSON.stringify(updatedRows));
+      } catch (e) {}
+
+      setLoadingIA(false);
+
+      Swal.fire({
+        toast: true,
+        position: 'top-end',
+        icon: 'success',
+        iconColor: '#16a34a',
+        title: `¡${count} citación(es) generada(s) exitosamente!`,
+        text: 'Las filas fueron marcadas como GENERADAS (fondo amarillo) en la hoja de cálculo.',
+        showConfirmButton: false,
+        timer: 3500,
+        timerProgressBar: true
+      });
+
+      setActiveMode('pendientes');
+    } catch (err: any) {
+      console.error("Error al generar citaciones desde Excel:", err);
+      setLoadingIA(false);
+      showRedErrorAlert(
+        "Error al Generar Citaciones",
+        "Ocurrió un error inesperado al procesar las filas de la hoja de cálculo."
+      );
+    }
+  };
+
   const processFile = async (file: File) => {
     if (!file) return;
     setLoadingText("Analizando Orden Judicial (PDF)...");
@@ -600,7 +896,17 @@ const App = () => {
   };
 
   const handleSmartExtract = async () => {
-    if (!rawText.trim()) return;
+    if (!rawText.trim()) {
+      Swal.fire({
+        icon: 'warning',
+        iconColor: '#003366',
+        title: 'Texto requerido',
+        text: 'Por favor pegue el texto de la orden judicial o actuaciones antes de procesar con Inteligencia Artificial.',
+        confirmButtonColor: '#003366',
+        confirmButtonText: 'Entendido'
+      });
+      return;
+    }
     setLoadingText("Extrayendo citaciones del texto...");
     setLoadingIA(true);
     try {
@@ -671,13 +977,29 @@ const App = () => {
           }
         }
         setRawText("");
-        alert(`Éxito: Se procesaron ${parsed.personas.length} citaciones.`);
+        Swal.fire({
+          icon: 'success',
+          iconColor: '#16a34a',
+          title: '<span style="color: #003366; font-weight: 800;">¡Extracción Exitosa!</span>',
+          html: `<p style="color: #334155; font-size: 14px; margin: 0;">Se procesaron y estructuraron <b>${parsed.personas.length}</b> citaciones correctamente.</p>`,
+          confirmButtonColor: '#003366',
+          confirmButtonText: 'Ver Citaciones',
+          timer: 3500,
+          timerProgressBar: true
+        });
       } else {
-        alert("No se encontraron datos de citación válidos en el texto. Verifique que incluya nombre, orden, fecha y hora.");
+        Swal.fire({
+          icon: 'warning',
+          iconColor: '#eab308',
+          title: 'Sin datos válidos',
+          html: '<p style="color: #475569; font-size: 13.5px;">No se encontraron datos de citación válidos en el texto. Verifique que incluya nombre, orden, fecha y hora.</p>',
+          confirmButtonColor: '#003366',
+          confirmButtonText: 'Entendido'
+        });
       }
     } catch (err: any) { 
       console.error("Error in AI extraction:", err);
-      alert("Error: " + (err.message || "No se pudo extraer la información del texto."));
+      showRedErrorAlert("Error en Extracción IA", err.message || "No se pudo extraer la información del texto.");
     } finally { 
       setLoadingIA(false); 
     }
@@ -724,15 +1046,16 @@ const App = () => {
       const cleanName = (item.nombre || 'Citado').replace(/[^a-zA-Z0-9_-]/g, '_');
       const filename = `PLANTILLA_CITACION_${cleanName}_${item.orden || 'SinOrden'}.docx`;
       downloadWordDocument(blob, filename);
+      showSuccessToast(`Documento descargado: ${item.nombre || cleanName}`);
     } catch (err) {
       console.error("Error al generar el documento de Word:", err);
-      alert("Error al generar el archivo Word.");
+      showRedErrorAlert("Error al Generar Word", "Ocurrió un problema al generar el archivo Word FPJ-35. Verifique que los campos requeridos estén completos.");
     }
   };
 
   const handleSignatureUpload = (file: File) => {
     if (!file.type.startsWith('image/')) {
-      alert("Por favor seleccione un archivo de imagen válido (PNG, JPG o WEBP).");
+      showRedErrorAlert("Formato Inválido", "Por favor seleccione un archivo de imagen válido (PNG, JPG o WEBP).");
       return;
     }
     const reader = new FileReader();
@@ -764,9 +1087,11 @@ const App = () => {
         } else {
           setConfig((prev: any) => ({ ...prev, firmaInvestigador: rawDataUrl }));
         }
+        showSuccessToast('Firma digital cargada exitosamente');
       };
       img.onerror = () => {
         setConfig((prev: any) => ({ ...prev, firmaInvestigador: rawDataUrl }));
+        showSuccessToast('Firma digital cargada');
       };
       img.src = rawDataUrl;
     };
@@ -774,33 +1099,44 @@ const App = () => {
   };
 
   const agregarPersonaManual = () => {
-    if (nuevoDato.nombre && nuevoDato.orden) {
-      registrarCitacion({
-        ...nuevoDato,
-        fecha: nuevoDato.fecha || getTodayDateStr(),
-        hora: nuevoDato.hora || getCurrentTimeStr(),
-        ciudad: config.municipio,
-        unidad: config.grupoInvestigador,
-        instalaciones: config.instalaciones,
-        direccionInstalaciones: config.direccionInstalaciones,
+    if (!nuevoDato.nombre?.trim() || !nuevoDato.orden?.trim()) {
+      Swal.fire({
+        icon: 'warning',
+        iconColor: '#003366',
+        title: 'Campos Incompletos',
+        text: 'Por favor complete al menos el Nombre del citado y el Número de Orden a Policía Judicial.',
+        confirmButtonColor: '#003366',
+        confirmButtonText: 'Entendido'
       });
-      setNuevoDato({ 
-        nombre: '', 
-        identificacion: '',
-        genero: 'Femenino', 
-        direccion: '',
-        correo: '',
-        telefono: '',
-        nunc: '',
-        orden: '', 
-        fecha: getTodayDateStr(), 
-        hora: getCurrentTimeStr(),
-        fiscal: '17 Local',
-        motivo: 'Entrevista',
-        requiereAbogado: 'NO',
-        observaciones: DEFAULT_OBSERVACIONES
-      });
+      return;
     }
+
+    registrarCitacion({
+      ...nuevoDato,
+      fecha: nuevoDato.fecha || getTodayDateStr(),
+      hora: nuevoDato.hora || getCurrentTimeStr(),
+      ciudad: config.municipio,
+      unidad: config.grupoInvestigador,
+      instalaciones: config.instalaciones,
+      direccionInstalaciones: config.direccionInstalaciones,
+    });
+    setNuevoDato({ 
+      nombre: '', 
+      identificacion: '',
+      genero: 'Femenino', 
+      direccion: '',
+      correo: '',
+      telefono: '',
+      nunc: '',
+      orden: '', 
+      fecha: getTodayDateStr(), 
+      hora: getCurrentTimeStr(),
+      fiscal: '17 Local',
+      motivo: 'Entrevista',
+      requiereAbogado: 'NO',
+      observaciones: DEFAULT_OBSERVACIONES
+    });
+    showSuccessToast('Citación registrada exitosamente');
   };
 
   const eliminarDeBandeja = (id: any) => eliminarDeHistorial(id);
@@ -828,8 +1164,10 @@ const App = () => {
         const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'historial', item.id);
         await updateDoc(docRef, { estado: 'citado' });
       }
+      showSuccessToast(`Citación movida a Citados: ${item.nombre || ''}`);
     } catch (err) {
       console.error("Error al marcar como citado:", err);
+      showRedErrorAlert("Error al Actualizar", "No fue posible actualizar el estado de la citación.");
     }
   };
 
@@ -864,8 +1202,10 @@ const App = () => {
         });
         await Promise.all(batchPromises);
       }
+      showSuccessToast(`${itemsToMove.length} citaciones marcadas como citadas`);
     } catch (err) {
       console.error("Error en movimiento masivo:", err);
+      showRedErrorAlert("Error Masivo", "Ocurrió un error al mover las citaciones seleccionadas.");
     }
   };
 
@@ -895,8 +1235,11 @@ const App = () => {
         const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'historial', id);
         await updateDoc(docRef, { asistencia: valor });
       }
+      const label = valor === 'asistio' ? 'Asistencia registrada' : valor === 'no_asistio' ? 'Marcado como No Asistió' : 'Asistencia restablecida';
+      showSuccessToast(label);
     } catch (err) {
       console.error("Error al marcar asistencia:", err);
+      showRedErrorAlert("Error al Registrar", "No se pudo actualizar la asistencia.");
     }
   };
 
@@ -920,13 +1263,31 @@ const App = () => {
         const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'historial', id);
         await updateDoc(docRef, { informe: valor });
       }
+      const label = valor === 'si' ? 'Con Informe marcado' : valor === 'no' ? 'Sin Informe marcado' : 'Informe restablecido';
+      showSuccessToast(label);
     } catch (err) {
       console.error("Error al marcar informe:", err);
+      showRedErrorAlert("Error al Registrar", "No se pudo actualizar el estado de informe.");
     }
   };
 
-  const eliminarDeHistorial = async (id: string) => {
+  const eliminarDeHistorial = async (id: string, nombreCitado?: string) => {
     if (!user) return;
+
+    const result = await Swal.fire({
+      title: '¿Eliminar citación?',
+      html: `<p style="font-size: 13.5px; color: #475569; margin: 0;">¿Desea eliminar la citación ${nombreCitado ? `de <b>${nombreCitado}</b>` : ''}? Esta acción no se puede deshacer.</p>`,
+      icon: 'warning',
+      iconColor: '#dc2626',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar',
+      reverseButtons: true
+    });
+    if (!result.isConfirmed) return;
+
     try {
       // Remove immediately from all local state
       setPersonas(prev => prev.filter(p => p.id !== id));
@@ -947,8 +1308,10 @@ const App = () => {
         const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'historial', id);
         await deleteDoc(docRef);
       }
+      showSuccessToast('Citación eliminada correctamente');
     } catch (err) {
       console.error("Error deleting from history:", err);
+      showRedErrorAlert("Error al Eliminar", "No fue posible eliminar la citación.");
     }
   };
 
@@ -974,12 +1337,17 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
   };
 
   const copiarAlPortapapeles = async (texto: string, item: any) => {
-    navigator.clipboard.writeText(texto);
-    const id = item.id;
-    if (!id) return;
-
-    setCopiadoIdx(id);
-    setTimeout(() => setCopiadoIdx(null), 2000);
+    try {
+      await navigator.clipboard.writeText(texto);
+      const id = item.id;
+      if (id) {
+        setCopiadoIdx(id);
+        setTimeout(() => setCopiadoIdx(null), 2000);
+      }
+      showSuccessToast('Mensaje de WhatsApp copiado');
+    } catch (err) {
+      showRedErrorAlert("Error al Copiar", "No se pudo copiar el texto al portapapeles.");
+    }
   };
 
   const LoadingOverlay = () => (
@@ -994,9 +1362,12 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
             <div className="bg-fgn-gold w-16 h-16 rounded-full mx-auto flex items-center justify-center mb-4 shadow-sm">
                <Building2 size={32} className="text-fgn-blue" />
             </div>
-            <h2 className="text-xl font-bold text-fgn-blue uppercase tracking-tight">Acceso a Citaciones FGN</h2>
-            <p className="text-text-muted text-[11px] font-medium leading-relaxed mt-2 uppercase tracking-widest">
-              Seleccione una modalidad para generar citaciones, extraer órdenes con IA y tramitar comparecencias.
+            <h2 className="text-2xl font-black text-fgn-blue uppercase tracking-tight">SICIJ</h2>
+            <p className="text-fgn-blue text-xs font-bold uppercase tracking-wider mt-1">
+              Sistema Integrado de Citaciones Judiciales
+            </p>
+            <p className="text-text-muted text-[10px] font-semibold leading-relaxed mt-1 uppercase tracking-widest text-slate-500">
+              Fiscalía General de la Nación • Unidad de Patrimonio Económico
             </p>
           </div>
           
@@ -1011,20 +1382,40 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
             
             <button 
               onClick={handleGoogleLogin}
-              className="w-full flex items-center justify-center gap-3 bg-white border border-fgn-border py-3 rounded font-bold text-xs uppercase tracking-widest text-fgn-blue hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
+              disabled={isLoggingInGoogle}
+              className="w-full flex items-center justify-center gap-3 bg-white border border-fgn-border py-3 rounded font-bold text-xs uppercase tracking-widest text-fgn-blue hover:bg-slate-50 transition-all shadow-xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-4 h-4" referrerPolicy="no-referrer" />
-              Ingresar con Google
+              {isLoggingInGoogle ? (
+                <>
+                  <Loader2 size={16} className="animate-spin text-fgn-blue" />
+                  <span>Conectando con Google...</span>
+                </>
+              ) : (
+                <>
+                  <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-4 h-4" referrerPolicy="no-referrer" />
+                  <span>Ingresar con Google</span>
+                </>
+              )}
             </button>
           </div>
 
-          <div className="bg-emerald-50 border border-emerald-200 rounded p-3 text-center">
-            <p className="text-[10.5px] text-emerald-900 font-semibold leading-relaxed">
-              ✓ Acceso para invitados habilitado
-            </p>
-            <p className="text-[9.5px] text-emerald-700 leading-normal mt-0.5">
-              Acceda a todas las herramientas: extracción de órdenes con IA, formato Word FPJ-35, filtros y control de citaciones.
-            </p>
+          <p className="text-[9.5px] text-slate-400 text-center leading-relaxed">
+            Si la ventana de Google no abre o se cierra inmediatamente, verifique que su navegador permita ventanas emergentes (pop-ups) o trabaje con <strong>Modo Invitado</strong>.
+          </p>
+
+          <div className="bg-slate-50 border border-slate-200 rounded p-3 text-left space-y-1.5">
+            <div className="flex items-start gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-amber-500 mt-1 shrink-0" />
+              <p className="text-[10px] text-slate-700 leading-snug">
+                <strong className="text-slate-900 font-bold uppercase">Modo Invitado:</strong> Los datos se guardan estrictamente en este navegador.
+              </p>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-blue-500 mt-1 shrink-0" />
+              <p className="text-[10px] text-slate-700 leading-snug">
+                <strong className="text-slate-900 font-bold uppercase">Cuenta Google:</strong> Datos en la nube Firestore. Son 100% independientes y no se mezclan.
+              </p>
+            </div>
           </div>
         </motion.div>
       ) : (
@@ -1053,18 +1444,18 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
       <AnimatePresence>
         {(loadingIA || !user) && <LoadingOverlay />}
         {isModalOpen && selectedCitation && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-2 sm:p-4">
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-xl shadow-2xl max-w-3xl w-full border border-fgn-border overflow-hidden flex flex-col max-h-[90vh]"
+              className="bg-white rounded-xl shadow-2xl max-w-3xl w-full border border-fgn-border overflow-hidden flex flex-col max-h-[92vh]"
             >
-              <div className="bg-fgn-blue text-white px-6 py-4 flex justify-between items-center border-b-4 border-fgn-gold">
-                <div className="flex items-center gap-3">
-                  <FileText size={20} className="text-fgn-gold" />
+              <div className="bg-fgn-blue text-white px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center border-b-4 border-fgn-gold shrink-0">
+                <div className="flex items-center gap-2.5 sm:gap-3">
+                  <FileText size={18} className="text-fgn-gold sm:w-5 sm:h-5 shrink-0" />
                   <div>
-                    <h3 className="text-xs font-bold uppercase tracking-widest">
+                    <h3 className="text-xs font-bold uppercase tracking-widest line-clamp-1">
                       Detalle de Citación • {selectedCitation.nombre}
                     </h3>
                     <p className="text-[9px] text-slate-300 font-mono">
@@ -1072,24 +1463,24 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                     </p>
                   </div>
                 </div>
-                <button onClick={() => setIsModalOpen(false)} className="hover:bg-white/10 p-1.5 rounded-full transition-colors text-white">
-                  <X size={20} />
+                <button onClick={() => setIsModalOpen(false)} className="hover:bg-white/10 p-1.5 rounded-full transition-colors text-white cursor-pointer shrink-0">
+                  <X size={18} />
                 </button>
               </div>
 
               {/* TABS SELECTOR */}
-              <div className="bg-bg-gray px-6 pt-3 pb-0 border-b border-fgn-border flex gap-2">
+              <div className="bg-bg-gray px-3 sm:px-6 pt-2.5 pb-0 border-b border-fgn-border flex gap-2 shrink-0 overflow-x-auto">
                 <button 
                   onClick={() => setModalTab('fpj35')}
-                  className={`px-4 py-2.5 rounded-t font-bold text-[10px] tracking-wider uppercase flex items-center gap-2 border-t border-x transition-all ${modalTab === 'fpj35' ? 'bg-white text-fgn-blue border-fgn-border border-b-white -mb-px shadow-sm' : 'text-text-muted hover:text-fgn-blue border-transparent'}`}
+                  className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-t font-bold text-[10px] tracking-wider uppercase flex items-center gap-1.5 border-t border-x transition-all shrink-0 cursor-pointer ${modalTab === 'fpj35' ? 'bg-white text-fgn-blue border-fgn-border border-b-white -mb-px shadow-sm' : 'text-text-muted hover:text-fgn-blue border-transparent'}`}
                 >
-                  <FileCode size={14} /> Formato Oficial FPJ-35
+                  <FileCode size={13} /> Formato Oficial FPJ-35
                 </button>
                 <button 
                   onClick={() => setModalTab('whatsapp')}
-                  className={`px-4 py-2.5 rounded-t font-bold text-[10px] tracking-wider uppercase flex items-center gap-2 border-t border-x transition-all ${modalTab === 'whatsapp' ? 'bg-white text-fgn-blue border-fgn-border border-b-white -mb-px shadow-sm' : 'text-text-muted hover:text-fgn-blue border-transparent'}`}
+                  className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-t font-bold text-[10px] tracking-wider uppercase flex items-center gap-1.5 border-t border-x transition-all shrink-0 cursor-pointer ${modalTab === 'whatsapp' ? 'bg-white text-fgn-blue border-fgn-border border-b-white -mb-px shadow-sm' : 'text-text-muted hover:text-fgn-blue border-transparent'}`}
                 >
-                  <Copy size={14} /> Mensaje Texto / WhatsApp
+                  <Copy size={13} /> Mensaje Texto / WhatsApp
                 </button>
               </div>
 
@@ -1198,25 +1589,25 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
               </div>
 
               {/* FOOTER ACTIONS */}
-              <div className="px-6 py-4 bg-slate-50 border-t border-fgn-border flex flex-wrap justify-between items-center gap-3">
+              <div className="px-4 sm:px-6 py-3 sm:py-4 bg-slate-50 border-t border-fgn-border flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2.5 sm:gap-3 shrink-0">
                 <button 
                   onClick={() => handleDownloadWord(selectedCitation)}
-                  className="px-6 py-3 bg-blue-700 hover:bg-blue-900 text-white font-bold rounded text-[10px] tracking-widest uppercase transition-all shadow flex items-center gap-2"
+                  className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-blue-700 hover:bg-blue-900 text-white font-bold rounded text-[10px] tracking-widest uppercase transition-all shadow flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <FileDown size={16} /> Descargar FPJ-35 (.docx)
+                  <FileDown size={15} /> Descargar FPJ-35 (.docx)
                 </button>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 w-full sm:w-auto">
                   <button 
                     onClick={() => copiarAlPortapapeles(generarMensaje(selectedCitation), selectedCitation)}
-                    className={`px-6 py-3 rounded text-[10px] font-bold tracking-widest uppercase transition-all flex items-center gap-2 ${copiadoIdx === (selectedCitation.id || 'modal') ? 'bg-green-600 text-white' : 'bg-fgn-blue text-white hover:bg-black'}`}
+                    className={`flex-1 sm:flex-initial px-4 sm:px-6 py-2.5 sm:py-3 rounded text-[10px] font-bold tracking-widest uppercase transition-all flex items-center justify-center gap-2 cursor-pointer ${copiadoIdx === (selectedCitation.id || 'modal') ? 'bg-green-600 text-white' : 'bg-fgn-blue text-white hover:bg-black'}`}
                   >
                     {copiadoIdx === (selectedCitation.id || 'modal') ? <Check size={14} /> : <Copy size={14} />}
                     {copiadoIdx === (selectedCitation.id || 'modal') ? 'COPIADO' : 'COPIAR TEXTO'}
                   </button>
                   <button 
                     onClick={() => setIsModalOpen(false)}
-                    className="px-6 py-3 bg-white border border-fgn-border text-text-muted font-bold rounded text-[10px] tracking-widest uppercase hover:bg-slate-100 transition-all"
+                    className="px-4 sm:px-6 py-2.5 sm:py-3 bg-white border border-fgn-border text-text-muted font-bold rounded text-[10px] tracking-widest uppercase hover:bg-slate-100 transition-all cursor-pointer"
                   >
                     Cerrar
                   </button>
@@ -1227,16 +1618,16 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
         )}
 
         {isProfileModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-2 sm:p-4">
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-xl shadow-2xl max-w-2xl w-full border border-fgn-border overflow-hidden flex flex-col max-h-[90vh]"
+              className="bg-white rounded-xl shadow-2xl max-w-2xl w-full border border-fgn-border overflow-hidden flex flex-col max-h-[92vh]"
             >
-              <div className="bg-fgn-blue text-white px-6 py-4 flex justify-between items-center border-b-4 border-fgn-gold">
-                <div className="flex items-center gap-3">
-                  <Building2 size={20} className="text-fgn-gold" />
+              <div className="bg-fgn-blue text-white px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center border-b-4 border-fgn-gold shrink-0">
+                <div className="flex items-center gap-2.5 sm:gap-3">
+                  <Building2 size={18} className="text-fgn-gold sm:w-5 sm:h-5 shrink-0" />
                   <div>
                     <h3 className="text-xs font-bold uppercase tracking-widest">
                       Perfil del Investigador • Configuración Oficial
@@ -1246,12 +1637,12 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                     </p>
                   </div>
                 </div>
-                <button onClick={() => setIsProfileModalOpen(false)} className="hover:bg-white/10 p-1.5 rounded-full transition-colors text-white">
-                  <X size={20} />
+                <button onClick={() => setIsProfileModalOpen(false)} className="hover:bg-white/10 p-1.5 rounded-full transition-colors text-white cursor-pointer shrink-0">
+                  <X size={18} />
                 </button>
               </div>
 
-              <div className="p-6 overflow-y-auto flex-1 space-y-6">
+              <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-5 sm:space-y-6">
                 <div className="space-y-4">
                   <p className="text-xs font-bold text-fgn-blue uppercase tracking-wider flex items-center gap-2 border-l-4 border-fgn-gold pl-2">
                     <User size={14} /> 2. Persona que Realiza la Citación
@@ -1453,7 +1844,10 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                       </div>
                       {customTemplateBuffer && (
                         <button 
-                          onClick={() => setCustomTemplateBuffer(undefined)}
+                          onClick={() => {
+                            setCustomTemplateBuffer(undefined);
+                            showInfoToast('Plantilla oficial restablecida');
+                          }}
                           className="text-[10px] text-red-600 font-bold hover:underline"
                         >
                           Restablecer a Original
@@ -1483,8 +1877,18 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                               reader.onload = (evt) => {
                                 if (evt.target?.result instanceof ArrayBuffer) {
                                   setCustomTemplateBuffer(evt.target.result);
-                                  alert("✓ Nueva plantilla PLANTILLA CITACION.docx cargada exitosamente.");
+                                  Swal.fire({
+                                    icon: 'success',
+                                    iconColor: '#16a34a',
+                                    title: '<span style="color: #003366; font-weight: 800;">¡Plantilla Cargada!</span>',
+                                    html: '<p style="color: #334155; font-size: 13.5px; margin: 0;">Nueva plantilla <b>PLANTILLA CITACION.docx</b> cargada exitosamente.</p>',
+                                    confirmButtonColor: '#003366',
+                                    confirmButtonText: 'Aceptar'
+                                  });
                                 }
+                              };
+                              reader.onerror = () => {
+                                showRedErrorAlert("Error al Cargar Plantilla", "No fue posible leer el archivo de plantilla seleccionado.");
                               };
                               reader.readAsArrayBuffer(file);
                             }
@@ -1516,13 +1920,16 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                 </div>
               </div>
 
-              <div className="px-6 py-4 bg-slate-50 border-t border-fgn-border flex justify-between items-center">
-                <span className="text-[10px] text-slate-500 font-medium flex items-center gap-1">
-                  <Check size={14} className="text-green-600" /> Sincronizado automáticamente con Firebase
+              <div className="px-4 sm:px-6 py-3 sm:py-4 bg-slate-50 border-t border-fgn-border flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2.5 sm:gap-4 shrink-0">
+                <span className="text-[10px] text-slate-500 font-medium flex items-center justify-center sm:justify-start gap-1">
+                  <Check size={14} className="text-green-600" /> {user?.isLocalGuest ? 'Guardado en navegador local' : 'Sincronizado con la nube'}
                 </span>
                 <button 
-                  onClick={() => setIsProfileModalOpen(false)}
-                  className="px-6 py-2.5 bg-fgn-blue hover:bg-black text-white font-bold rounded text-[10px] tracking-widest uppercase transition-all shadow"
+                  onClick={() => {
+                    setIsProfileModalOpen(false);
+                    showSuccessToast('Perfil de Investigador guardado');
+                  }}
+                  className="w-full sm:w-auto px-6 py-2.5 bg-fgn-blue hover:bg-black text-white font-bold rounded text-[10px] tracking-widest uppercase transition-all shadow cursor-pointer text-center"
                 >
                   Guardar y Cerrar
                 </button>
@@ -1534,30 +1941,64 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
 
       {/* HEADER INSTITUCIONAL */}
       <header className="bg-fgn-blue text-white shadow-lg sticky top-0 z-50 border-b-4 border-fgn-gold">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="bg-fgn-gold w-10 h-10 rounded flex items-center justify-center shadow-inner">
-               <FileText size={20} className="text-fgn-blue" />
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 sm:py-4 flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="bg-fgn-gold w-9 h-9 sm:w-10 sm:h-10 rounded flex items-center justify-center shadow-inner shrink-0">
+                 <FileText size={18} className="text-fgn-blue sm:w-5 sm:h-5" />
+              </div>
+              <div>
+                <div className="flex flex-wrap items-baseline gap-x-2">
+                  <h1 className="text-lg sm:text-xl font-black tracking-wider uppercase text-white">
+                    SICIJ
+                  </h1>
+                  <span className="hidden sm:inline text-blue-200/50 text-sm">|</span>
+                  <span className="text-[11px] sm:text-sm font-bold text-blue-100 tracking-wide uppercase">
+                    Citaciones Judiciales
+                  </span>
+                </div>
+                <p className="text-blue-100/75 text-[9px] sm:text-[10px] font-bold tracking-[0.08em] sm:tracking-[0.1em] uppercase mt-0.5">
+                  Fiscalía General de la Nación • Patrimonio Económico
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-lg font-bold tracking-wider uppercase">
-                Fiscalía General de la Nación
-              </h1>
-              <p className="text-blue-100/70 text-[10px] font-bold tracking-[0.1em] uppercase">Unidad de Patrimonio Económico • Ecosistema Digital de Citaciones</p>
-            </div>
+
+            {/* Mobile quick profile trigger */}
+            {user && (
+              <div className="flex items-center gap-1.5 md:hidden">
+                <button 
+                  onClick={() => setIsProfileModalOpen(true)}
+                  className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg border border-white/20 transition-all cursor-pointer"
+                  title="Perfil Investigador"
+                >
+                  <Building2 size={16} className="text-fgn-gold" />
+                </button>
+                <button 
+                  onClick={handleLogout}
+                  className="p-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors cursor-pointer text-white"
+                  title="Cerrar Sesión"
+                >
+                  <LogOut size={16} />
+                </button>
+              </div>
+            )}
           </div>
           
-          <div className="flex items-center gap-4">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-4">
             {user && (
-              <div className="flex items-center gap-3 mr-2">
+              <div className="hidden md:flex items-center gap-3 mr-2">
                  <div className="text-right hidden sm:block">
                    <div className="flex items-center justify-end gap-1.5">
                      <p className="text-[9px] font-bold uppercase text-blue-200 tracking-widest leading-none">
-                       {user.isAnonymous || user.isLocalGuest ? 'Modo' : 'Investigador'}
+                       {user.isAnonymous || user.isLocalGuest ? 'Modo' : 'Cuenta'}
                      </p>
-                     {(user.isAnonymous || user.isLocalGuest) && (
-                       <span className="bg-amber-400 text-slate-900 text-[8px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">
-                         Invitado
+                     {(user.isAnonymous || user.isLocalGuest) ? (
+                       <span className="bg-amber-400 text-slate-900 text-[8px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider" title="Datos almacenados exclusivamente en este navegador">
+                         Invitado · Local
+                       </span>
+                     ) : (
+                       <span className="bg-blue-400 text-slate-900 text-[8px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider" title="Datos sincronizados en la nube Firestore">
+                         Google · Nube
                        </span>
                      )}
                    </div>
@@ -1567,20 +2008,25 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                  </div>
                  <button 
                    onClick={() => setIsProfileModalOpen(true)}
-                   className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-bold uppercase tracking-wider border border-white/20 transition-all shadow-sm"
+                   className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-bold uppercase tracking-wider border border-white/20 transition-all shadow-sm cursor-pointer"
                    title="Editar Perfil del Investigador (Sección 2 FPJ-35)"
                  >
                    <Building2 size={14} className="text-fgn-gold" />
-                   <span className="hidden md:inline">Perfil Investigador</span>
+                   <span className="hidden md:inline">Perfil</span>
                  </button>
                  {(user.isAnonymous || user.isLocalGuest) && (
                    <button 
                      onClick={handleGoogleLogin}
-                     className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-white text-fgn-blue hover:bg-slate-100 rounded text-[10px] font-bold uppercase tracking-wider transition-all shadow-sm"
-                     title="Vincular con cuenta de Google"
+                     disabled={isLoggingInGoogle}
+                     className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-white text-fgn-blue hover:bg-slate-100 rounded text-[10px] font-bold uppercase tracking-wider transition-all shadow-sm cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                     title="Cambiar a cuenta de Google en la nube (base de datos independiente)"
                    >
-                     <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-3.5 h-3.5" referrerPolicy="no-referrer" />
-                     <span>Vincular Google</span>
+                     {isLoggingInGoogle ? (
+                       <Loader2 size={12} className="animate-spin text-fgn-blue" />
+                     ) : (
+                       <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-3.5 h-3.5" referrerPolicy="no-referrer" />
+                     )}
+                     <span>{isLoggingInGoogle ? 'Abriendo...' : 'Google'}</span>
                    </button>
                  )}
                  <button 
@@ -1592,31 +2038,43 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                  </button>
               </div>
             )}
-            <div className="bg-fgn-blue/50 border border-white/20 px-6 py-2 rounded flex items-center gap-6 backdrop-blur-sm">
+            <div className="bg-fgn-blue/50 border border-white/20 px-3 sm:px-6 py-2 rounded flex items-center justify-between sm:justify-center gap-3 sm:gap-6 backdrop-blur-sm overflow-x-auto">
+              <button 
+                onClick={() => setActiveMode('excel')}
+                className={`text-center transition-all group shrink-0 ${activeMode === 'excel' ? 'scale-105 sm:scale-110' : 'hover:scale-105'} cursor-pointer`}
+                title="Hoja de Cálculo - Insumo de Citaciones Judiciales"
+              >
+                <p className={`text-[8px] sm:text-[9px] font-bold uppercase tracking-wider sm:tracking-widest mb-0.5 group-hover:text-white transition-colors ${activeMode === 'excel' ? 'text-white font-black' : 'text-emerald-300'}`}>Insumo Excel</p>
+                <div className="flex items-center justify-center gap-1 sm:gap-1.5">
+                  <FileSpreadsheet size={13} className={`transition-colors sm:w-4 sm:h-4 ${activeMode === 'excel' ? 'text-white' : 'text-emerald-300 group-hover:text-white'}`} />
+                  <span className="text-base sm:text-lg font-mono font-bold text-white leading-none">{excelRows.length}</span>
+                </div>
+              </button>
+              <div className="h-6 sm:h-8 w-[1px] bg-white/10 shrink-0"></div>
               <button 
                 onClick={() => setActiveMode('pendientes')}
-                className={`text-center transition-all group ${activeMode === 'pendientes' ? 'scale-110' : 'hover:scale-105'}`}
+                className={`text-center transition-all group shrink-0 ${activeMode === 'pendientes' ? 'scale-105 sm:scale-110' : 'hover:scale-105'} cursor-pointer`}
               >
-                <p className={`text-[9px] font-bold uppercase tracking-widest mb-0.5 group-hover:text-white transition-colors ${activeMode === 'pendientes' ? 'text-white' : 'text-blue-200'}`}>Generadas</p>
-                <p className="text-lg font-mono font-bold text-white leading-none">{personas.length}</p>
+                <p className={`text-[8px] sm:text-[9px] font-bold uppercase tracking-wider sm:tracking-widest mb-0.5 group-hover:text-white transition-colors ${activeMode === 'pendientes' ? 'text-white' : 'text-blue-200'}`}>Generadas</p>
+                <p className="text-base sm:text-lg font-mono font-bold text-white leading-none">{personas.length}</p>
               </button>
-              <div className="h-8 w-[1px] bg-white/10"></div>
+              <div className="h-6 sm:h-8 w-[1px] bg-white/10 shrink-0"></div>
               <button 
                 onClick={() => setActiveMode('citados')}
-                className={`text-center transition-all group ${activeMode === 'citados' ? 'scale-110' : 'hover:scale-105'}`}
+                className={`text-center transition-all group shrink-0 ${activeMode === 'citados' ? 'scale-105 sm:scale-110' : 'hover:scale-105'} cursor-pointer`}
               >
-                <p className={`text-[9px] font-bold uppercase tracking-widest mb-0.5 group-hover:text-white transition-colors ${activeMode === 'citados' ? 'text-white' : 'text-blue-200'}`}>Citados</p>
-                <p className="text-lg font-mono font-bold text-white leading-none">{citados.length}</p>
+                <p className={`text-[8px] sm:text-[9px] font-bold uppercase tracking-wider sm:tracking-widest mb-0.5 group-hover:text-white transition-colors ${activeMode === 'citados' ? 'text-white' : 'text-blue-200'}`}>Citados</p>
+                <p className="text-base sm:text-lg font-mono font-bold text-white leading-none">{citados.length}</p>
               </button>
-              <div className="h-8 w-[1px] bg-white/10"></div>
+              <div className="h-6 sm:h-8 w-[1px] bg-white/10 shrink-0"></div>
               <button 
                 onClick={() => setActiveMode('historial')}
-                className={`flex flex-col items-center group transition-all ${activeMode === 'historial' ? 'scale-110' : 'hover:scale-105'}`}
+                className={`flex flex-col items-center group transition-all shrink-0 ${activeMode === 'historial' ? 'scale-105 sm:scale-110' : 'hover:scale-105'} cursor-pointer`}
               >
-                <p className={`text-[9px] font-bold uppercase tracking-widest mb-0.5 group-hover:text-white transition-colors ${activeMode === 'historial' ? 'text-white' : 'text-blue-200'}`}>Archivo</p>
-                <div className="flex items-center gap-2">
-                   <History size={16} className={`transition-colors ${activeMode === 'historial' ? 'text-white' : 'text-blue-200 group-hover:text-white'}`} />
-                   <span className="text-lg font-mono font-bold text-white leading-none">{historial.length}</span>
+                <p className={`text-[8px] sm:text-[9px] font-bold uppercase tracking-wider sm:tracking-widest mb-0.5 group-hover:text-white transition-colors ${activeMode === 'historial' ? 'text-white' : 'text-blue-200'}`}>Archivo</p>
+                <div className="flex items-center gap-1 sm:gap-2">
+                   <History size={14} className={`transition-colors sm:w-4 sm:h-4 ${activeMode === 'historial' ? 'text-white' : 'text-blue-200 group-hover:text-white'}`} />
+                   <span className="text-base sm:text-lg font-mono font-bold text-white leading-none">{historial.length}</span>
                 </div>
               </button>
             </div>
@@ -1624,62 +2082,70 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 mt-12">
+      <main className="w-full max-w-7xl mx-auto px-3 sm:px-6 mt-4 sm:mt-8 pb-12">
         
         {/* PANEL DE BIENVENIDA / MENÚ */}
         {!activeMode && !pendingExtraction && (
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="py-12"
+            className="py-10 max-w-5xl mx-auto"
           >
-            <div className="text-center mb-16">
+            <div className="text-center mb-10">
               <h2 className="text-3xl font-bold text-fgn-blue uppercase tracking-normal">Centro de Gestión Judicial</h2>
               <div className="w-16 h-1 bg-fgn-gold mx-auto mt-2" />
               <p className="text-text-muted font-bold uppercase text-[10px] tracking-widest pt-4">Seleccione una modalidad de trabajo para iniciar el procesamiento</p>
             </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {[
-                { 
-                  id: 'manual', 
-                  title: 'Registro Manual', 
-                  icon: <Plus size={40} />, 
-                  color: 'fgn-blue', 
-                  desc: 'Formulario estándar para creación de citaciones con validación inmediata.' 
-                },
-                { 
-                  id: 'pdf', 
-                  title: 'Análisis PDF (IA)', 
-                  icon: <FileUp size={40} />, 
-                  color: 'fgn-blue', 
-                  desc: 'Extraiga datos desde órdenes judiciales PDF usando inteligencia artificial.' 
-                },
-                { 
-                  id: 'texto', 
-                  title: 'Texto Libre (IA)', 
-                  icon: <BrainCircuit size={40} />, 
-                  color: 'fgn-blue', 
-                  desc: 'Pegue informes desordenados para normalización automática de datos.' 
-                }
-              ].map(mode => (
-                <button 
-                  key={mode.id}
-                  onClick={() => setActiveMode(mode.id)} 
-                  className="group bg-white p-10 rounded-xl border border-fgn-border shadow-sm hover:border-fgn-blue hover:shadow-md transition-all flex flex-col items-center text-center space-y-4"
-                >
-                  <div className="w-20 h-20 rounded-full bg-bg-gray flex items-center justify-center text-fgn-blue group-hover:scale-110 transition-transform">
-                    {mode.icon}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+              {/* Tarjeta 1: Registro Manual */}
+              <button 
+                onClick={() => setActiveMode('manual')} 
+                className="group bg-white p-8 sm:p-10 rounded-2xl border border-fgn-border shadow-xs hover:border-fgn-blue hover:shadow-lg transition-all flex flex-col items-center text-center space-y-4 cursor-pointer"
+              >
+                <div className="w-20 h-20 rounded-2xl bg-bg-gray flex items-center justify-center text-fgn-blue group-hover:scale-110 group-hover:bg-blue-50 transition-all">
+                  <Plus size={38} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-fgn-blue uppercase tracking-tight">Registro Manual</h3>
+                  <p className="text-text-muted text-xs font-medium leading-relaxed mt-2 max-w-sm">
+                    Formulario estructurado para creación individual de citaciones judiciales con validación y vista previa en tiempo real.
+                  </p>
+                </div>
+                <span className="text-[11px] font-bold text-fgn-blue uppercase tracking-wider group-hover:underline pt-2">
+                  Iniciar Registro Manual &rarr;
+                </span>
+              </button>
+
+              {/* Tarjeta 2: Hoja de Cálculo (Insumo) - ÚNICA ENTRADA */}
+              <button 
+                onClick={() => setActiveMode('excel')} 
+                className="group bg-white p-8 sm:p-10 rounded-2xl border border-fgn-border shadow-xs hover:border-emerald-600 hover:shadow-lg transition-all flex flex-col items-center text-center space-y-4 cursor-pointer relative"
+              >
+                <div className="w-20 h-20 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-700 group-hover:scale-110 group-hover:bg-emerald-100 transition-all">
+                  <FileSpreadsheet size={38} />
+                </div>
+                <div>
+                  <div className="flex items-center justify-center gap-2">
+                    <h3 className="text-base font-bold text-fgn-blue uppercase tracking-tight">Hoja de Cálculo (Insumo)</h3>
+                    {excelRows.length > 0 && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        {excelRows.length} fila{excelRows.length === 1 ? '' : 's'}
+                      </span>
+                    )}
                   </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-fgn-blue uppercase tracking-tight">{mode.title}</h3>
-                    <p className="text-text-muted text-[11px] font-medium leading-relaxed mt-2">{mode.desc}</p>
-                  </div>
-                </button>
-              ))}
+                  <p className="text-text-muted text-xs font-medium leading-relaxed mt-2 max-w-sm">
+                    Matriz interactiva para ingresar datos, pegar directamente del portapapeles con validación de estructura y generar citaciones en bloque.
+                  </p>
+                </div>
+                <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider group-hover:underline pt-2">
+                  Abrir Hoja de Cálculo &rarr;
+                </span>
+              </button>
             </div>
           </motion.div>
         )}
+
 
         {/* VISTA ARCHIVO HISTÓRICO */}
         {activeMode === 'historial' && (
@@ -1717,7 +2183,7 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
             />
 
             <div className="bg-white rounded-xl border border-fgn-border overflow-hidden shadow-sm">
-              <div className="bg-bg-gray px-6 py-3 border-b border-fgn-border grid grid-cols-12 gap-4 text-[9px] font-bold text-text-muted uppercase tracking-widest">
+              <div className="hidden md:grid bg-bg-gray px-6 py-3 border-b border-fgn-border grid-cols-12 gap-4 text-[9px] font-bold text-text-muted uppercase tracking-widest">
                 <div className="col-span-3">PARTICIPANTE</div>
                 <div className="col-span-2">ORDEN OPJ</div>
                 <div 
@@ -1753,82 +2219,183 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                     <motion.div 
                       layout
                       key={p.id} 
-                      className="px-6 py-4 grid grid-cols-12 gap-4 items-center hover:bg-slate-50 transition-colors"
+                      className="transition-colors hover:bg-slate-50/70"
                     >
-                      <div className="col-span-3">
-                        <p className="text-xs font-bold text-fgn-blue uppercase">
-                          {p.nombre}{p.identificacion && p.identificacion.trim() ? ` con CC ${p.identificacion.trim()}` : ''}
-                        </p>
-                        {p.fiscal && (
-                          <p className="text-[10px] text-slate-400 font-medium uppercase mt-0.5">
-                            Fiscalía {p.fiscal}
+                      {/* DESKTOP ROW */}
+                      <div className="hidden md:grid px-6 py-4 grid-cols-12 gap-4 items-center">
+                        <div className="col-span-3">
+                          <p className="text-xs font-bold text-fgn-blue uppercase">
+                            {p.nombre}{p.identificacion && p.identificacion.trim() ? ` con CC ${p.identificacion.trim()}` : ''}
                           </p>
-                        )}
+                          {p.fiscal && (
+                            <p className="text-[10px] text-slate-400 font-medium uppercase mt-0.5">
+                              Fiscalía {p.fiscal}
+                            </p>
+                          )}
+                        </div>
+                        <div className="col-span-2 font-mono text-[11px] text-text-muted uppercase">
+                          {p.orden}
+                        </div>
+                        <div className="col-span-2 font-mono text-[11px] text-fgn-blue flex flex-col">
+                          <span>{p.fecha ? formatDateES(p.fecha).toUpperCase() : '---'}</span>
+                          {p.hora && <span className="text-[10px] text-fgn-gold font-bold">{formatTimeAMPM(p.hora)}</span>}
+                        </div>
+                        <div className="col-span-2 flex items-center justify-center gap-2">
+                          <button 
+                            onClick={() => marcarInforme(p.id, p.informe === 'si' ? null : 'si')}
+                            className={`p-1.5 rounded transition-all border ${p.informe === 'si' ? 'bg-fgn-blue text-white border-fgn-blue shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-fgn-blue hover:border-fgn-blue cursor-pointer'}`}
+                            title={p.informe === 'si' ? 'Informe Realizado (Clic para desmarcar)' : 'Marcar con Informe'}
+                          >
+                            <FileCheck size={14} />
+                          </button>
+                          <button 
+                            onClick={() => marcarInforme(p.id, p.informe === 'no' ? null : 'no')}
+                            className={`p-1.5 rounded transition-all border ${p.informe === 'no' ? 'bg-slate-500 text-white border-slate-500 shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-slate-500 hover:border-slate-500 cursor-pointer'}`}
+                            title={p.informe === 'no' ? 'Marcado Sin Informe (Clic para desmarcar)' : 'Marcar Sin Informe'}
+                          >
+                            <FileX size={14} />
+                          </button>
+                        </div>
+                        <div className="col-span-2 flex items-center justify-center gap-2">
+                          <button 
+                            onClick={() => marcarAsistencia(p.id, p.asistencia === 'asistio' ? null : 'asistio')}
+                            className={`p-1.5 rounded transition-all border ${p.asistencia === 'asistio' ? 'bg-green-600 text-white border-green-600 shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-green-500 hover:border-green-500 cursor-pointer'}`}
+                            title={p.asistencia === 'asistio' ? 'Asistió (Clic para desmarcar)' : 'Marcar Asistió'}
+                          >
+                            <UserCheck size={14} />
+                          </button>
+                          <button 
+                            onClick={() => marcarAsistencia(p.id, p.asistencia === 'no_asistio' ? null : 'no_asistio')}
+                            className={`p-1.5 rounded transition-all border ${p.asistencia === 'no_asistio' ? 'bg-red-600 text-white border-red-600 shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-red-500 hover:border-red-500 cursor-pointer'}`}
+                            title={p.asistencia === 'no_asistio' ? 'No Asistió (Clic para desmarcar)' : 'Marcar No Asistió'}
+                          >
+                            <UserX size={14} />
+                          </button>
+                        </div>
+                        <div className="col-span-1 flex items-center justify-end gap-1">
+                          <button 
+                            onClick={() => {
+                              setSelectedCitation(p);
+                              setIsModalOpen(true);
+                            }}
+                            className="p-1.5 text-pink-600 hover:bg-pink-50 rounded transition-all cursor-pointer"
+                            title="Ver Citación Completa"
+                          >
+                            <Eye size={16} />
+                          </button>
+                          <button 
+                            onClick={() => handleDownloadWord(p)}
+                            className="p-1.5 text-blue-700 hover:bg-blue-50 rounded transition-all cursor-pointer"
+                            title="Descargar Formato Word FPJ-35 (.docx)"
+                          >
+                            <FileDown size={16} />
+                          </button>
+                          <button 
+                            onClick={() => eliminarDeHistorial(p.id, p.nombre)} 
+                            className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-all cursor-pointer"
+                            title="Eliminar Citación"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       </div>
-                      <div className="col-span-2 font-mono text-[11px] text-text-muted uppercase">
-                        {p.orden}
-                      </div>
-                      <div className="col-span-2 font-mono text-[11px] text-fgn-blue flex flex-col">
-                        <span>{p.fecha ? formatDateES(p.fecha).toUpperCase() : '---'}</span>
-                        {p.hora && <span className="text-[10px] text-fgn-gold font-bold">{formatTimeAMPM(p.hora)}</span>}
-                      </div>
-                      <div className="col-span-2 flex items-center justify-center gap-2">
-                        <button 
-                          onClick={() => marcarInforme(p.id, p.informe === 'si' ? null : 'si')}
-                          className={`p-1.5 rounded transition-all border ${p.informe === 'si' ? 'bg-fgn-blue text-white border-fgn-blue shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-fgn-blue hover:border-fgn-blue'}`}
-                          title={p.informe === 'si' ? 'Informe Realizado (Clic para desmarcar)' : 'Marcar con Informe'}
-                        >
-                          <FileCheck size={14} />
-                        </button>
-                        <button 
-                          onClick={() => marcarInforme(p.id, p.informe === 'no' ? null : 'no')}
-                          className={`p-1.5 rounded transition-all border ${p.informe === 'no' ? 'bg-slate-500 text-white border-slate-500 shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-slate-500 hover:border-slate-500'}`}
-                          title={p.informe === 'no' ? 'Marcado Sin Informe (Clic para desmarcar)' : 'Marcar Sin Informe'}
-                        >
-                          <FileX size={14} />
-                        </button>
-                      </div>
-                      <div className="col-span-2 flex items-center justify-center gap-2">
-                        <button 
-                          onClick={() => marcarAsistencia(p.id, p.asistencia === 'asistio' ? null : 'asistio')}
-                          className={`p-1.5 rounded transition-all border ${p.asistencia === 'asistio' ? 'bg-green-600 text-white border-green-600 shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-green-500 hover:border-green-500'}`}
-                          title={p.asistencia === 'asistio' ? 'Asistió (Clic para desmarcar)' : 'Marcar Asistió'}
-                        >
-                          <UserCheck size={14} />
-                        </button>
-                        <button 
-                          onClick={() => marcarAsistencia(p.id, p.asistencia === 'no_asistio' ? null : 'no_asistio')}
-                          className={`p-1.5 rounded transition-all border ${p.asistencia === 'no_asistio' ? 'bg-red-600 text-white border-red-600 shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-red-500 hover:border-red-500'}`}
-                          title={p.asistencia === 'no_asistio' ? 'No Asistió (Clic para desmarcar)' : 'Marcar No Asistió'}
-                        >
-                          <UserX size={14} />
-                        </button>
-                      </div>
-                      <div className="col-span-1 flex items-center justify-end gap-1">
-                        <button 
-                          onClick={() => {
-                            setSelectedCitation(p);
-                            setIsModalOpen(true);
-                          }}
-                          className="p-1.5 text-pink-600 hover:bg-pink-50 rounded transition-all"
-                          title="Ver Citación Completa"
-                        >
-                          <Eye size={16} />
-                        </button>
-                        <button 
-                          onClick={() => handleDownloadWord(p)}
-                          className="p-1.5 text-blue-700 hover:bg-blue-50 rounded transition-all"
-                          title="Descargar Formato Word FPJ-35 (.docx)"
-                        >
-                          <FileDown size={16} />
-                        </button>
-                        <button 
-                          onClick={() => eliminarDeHistorial(p.id)} 
-                          className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-all"
-                          title="Eliminar Citación"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+
+                      {/* MOBILE CARD */}
+                      <div className="block md:hidden p-3.5 space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-xs font-bold text-fgn-blue uppercase">
+                              {p.nombre}{p.identificacion && p.identificacion.trim() ? ` con CC ${p.identificacion.trim()}` : ''}
+                            </p>
+                            {p.fiscal && (
+                              <p className="text-[10px] text-slate-500 font-medium uppercase mt-0.5">
+                                Fiscalía {p.fiscal}
+                              </p>
+                            )}
+                          </div>
+                          <span className="font-mono text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 shrink-0">
+                            {p.orden}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px] bg-slate-50 p-2 rounded border border-slate-100 font-mono">
+                          <span className="text-slate-600">
+                            {p.fecha ? formatDateES(p.fecha).toUpperCase() : '---'}
+                          </span>
+                          {p.hora && (
+                            <span className="text-fgn-blue font-bold">
+                              {formatTimeAMPM(p.hora)}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          {/* Informe controls */}
+                          <div className="flex items-center justify-between p-1.5 bg-slate-50 rounded border border-slate-200 text-[10px]">
+                            <span className="font-bold text-slate-600 uppercase">Informe:</span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => marcarInforme(p.id, p.informe === 'si' ? null : 'si')}
+                                className={`p-1.5 rounded transition-all border ${p.informe === 'si' ? 'bg-fgn-blue text-white border-fgn-blue' : 'bg-white text-slate-400 border-slate-300'}`}
+                                title="Con Informe"
+                              >
+                                <FileCheck size={13} />
+                              </button>
+                              <button
+                                onClick={() => marcarInforme(p.id, p.informe === 'no' ? null : 'no')}
+                                className={`p-1.5 rounded transition-all border ${p.informe === 'no' ? 'bg-slate-600 text-white border-slate-600' : 'bg-white text-slate-400 border-slate-300'}`}
+                                title="Sin Informe"
+                              >
+                                <FileX size={13} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Asistencia controls */}
+                          <div className="flex items-center justify-between p-1.5 bg-slate-50 rounded border border-slate-200 text-[10px]">
+                            <span className="font-bold text-slate-600 uppercase">Asistencia:</span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => marcarAsistencia(p.id, p.asistencia === 'asistio' ? null : 'asistio')}
+                                className={`p-1.5 rounded transition-all border ${p.asistencia === 'asistio' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-400 border-slate-300'}`}
+                                title="Asistió"
+                              >
+                                <UserCheck size={13} />
+                              </button>
+                              <button
+                                onClick={() => marcarAsistencia(p.id, p.asistencia === 'no_asistio' ? null : 'no_asistio')}
+                                className={`p-1.5 rounded transition-all border ${p.asistencia === 'no_asistio' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-400 border-slate-300'}`}
+                                title="No Asistió"
+                              >
+                                <UserX size={13} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
+                          <button 
+                            onClick={() => {
+                              setSelectedCitation(p);
+                              setIsModalOpen(true);
+                            }}
+                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-pink-700 bg-pink-50 hover:bg-pink-100 rounded border border-pink-200 font-bold transition-all cursor-pointer"
+                          >
+                            <Eye size={13} /> <span>Ver</span>
+                          </button>
+                          <button 
+                            onClick={() => handleDownloadWord(p)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 font-bold transition-all cursor-pointer"
+                          >
+                            <FileDown size={13} /> <span>Word</span>
+                          </button>
+                          <button 
+                            onClick={() => eliminarDeHistorial(p.id, p.nombre)} 
+                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded border border-red-200 font-bold transition-all cursor-pointer"
+                          >
+                            <Trash2 size={13} /> <span>Eliminar</span>
+                          </button>
+                        </div>
                       </div>
                     </motion.div>
                   ))}
@@ -1848,8 +2415,23 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
           </motion.div>
         )}
 
+        {/* VISTA HOJA DE CÁLCULO (INSUMO EXCEL) */}
+        {activeMode === 'excel' && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <ExcelMatrixView
+              rows={excelRows}
+              onRowsChange={setExcelRows}
+              onGenerateCitations={generarCitacionesDesdeExcel}
+              onBack={() => setActiveMode(null)}
+            />
+          </motion.div>
+        )}
+
         {/* FLUJO DE TRABAJO ACTIVO (REGISTRO Y EXTRACCIÓN) */}
-        {(['manual', 'pdf', 'texto'].includes(activeMode || '') || pendingExtraction) && (
+        {(['manual', 'pdf'].includes(activeMode || '') || pendingExtraction) && (
           <div className="space-y-6">
             <div className="flex items-center">
               <button 
@@ -2088,28 +2670,6 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                   </h2>
                   <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mt-2">Detección automática por Gemini AI</p>
                   <input type="file" accept="application/pdf" className="hidden" ref={fileInputRef} onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0])} />
-                </div>
-              )}
-
-              {activeMode === 'texto' && (
-                <div className="bg-white p-8 rounded-xl border border-fgn-border shadow-sm">
-                  <h2 className="text-sm font-bold mb-6 flex items-center gap-2 text-fgn-blue uppercase tracking-widest">
-                    <BrainCircuit size={20} /> Normalización de Texto Judicial
-                  </h2>
-                  <textarea 
-                    rows={6} 
-                    className="w-full p-4 font-mono bg-bg-gray border border-fgn-border rounded text-xs font-medium text-text-main resize-none outline-none focus:border-fgn-blue shadow-inner" 
-                    placeholder="Pegue informes o párrafos desordenados aquí..." 
-                    value={rawText} 
-                    onChange={(e) => setRawText(e.target.value)} 
-                  />
-                  <button 
-                    onClick={handleSmartExtract} 
-                    disabled={loadingIA || !rawText} 
-                    className="w-full mt-6 bg-fgn-blue hover:bg-black disabled:bg-slate-300 text-white font-bold py-4 rounded text-[10px] tracking-[0.2em] uppercase transition-all"
-                  >
-                    GENERAR CITACION
-                  </button>
                 </div>
               )}
 
@@ -2416,11 +2976,11 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
           />
 
           <div className="bg-white rounded-xl border border-fgn-border overflow-hidden shadow-sm">
-            <div className="bg-bg-gray px-6 py-3 border-b border-fgn-border grid grid-cols-12 gap-4 text-[9px] font-bold text-text-muted uppercase tracking-widest">
+            <div className="hidden md:grid bg-bg-gray px-6 py-3 border-b border-fgn-border grid-cols-12 gap-4 text-[9px] font-bold text-text-muted uppercase tracking-widest">
               <div className="col-span-1 flex items-center justify-center">
                 <input 
                   type="checkbox" 
-                  className="w-4 h-4 rounded border-fgn-border text-fgn-blue focus:ring-fgn-blue"
+                  className="w-4 h-4 rounded border-fgn-border text-fgn-blue focus:ring-fgn-blue cursor-pointer"
                   checked={paginatedPendientes.length > 0 && paginatedPendientes.every(p => selectedIds.includes(p.id))}
                   onChange={(e) => {
                     if (e.target.checked) {
@@ -2458,12 +3018,13 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                 </div>
               ) : (
                 paginatedPendientes.map((p) => (
-                  <div key={p.id} className="group hover:bg-slate-50 transition-colors">
-                    <div className="px-6 py-4 grid grid-cols-12 gap-4 items-center">
+                  <div key={p.id} className="group hover:bg-slate-50/70 transition-colors">
+                    {/* DESKTOP ROW */}
+                    <div className="hidden md:grid px-6 py-4 grid-cols-12 gap-4 items-center">
                       <div className="col-span-1 flex items-center justify-center">
                         <input 
                           type="checkbox" 
-                          className="w-4 h-4 rounded border-fgn-border text-fgn-blue focus:ring-fgn-blue"
+                          className="w-4 h-4 rounded border-fgn-border text-fgn-blue focus:ring-fgn-blue cursor-pointer"
                           checked={selectedIds.includes(p.id)}
                           onChange={() => toggleSelection(p.id)}
                         />
@@ -2491,38 +3052,116 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                             setSelectedCitation(p);
                             setIsModalOpen(true);
                           }}
-                          className="p-1.5 text-pink-600 hover:bg-pink-50 rounded transition-all"
+                          className="p-1.5 text-pink-600 hover:bg-pink-50 rounded transition-all cursor-pointer"
                           title="Ver Citación Completa"
                         >
                           <Eye size={16} />
                         </button>
                         <button 
                           onClick={() => handleDownloadWord(p)}
-                          className="p-1.5 text-blue-700 hover:bg-blue-50 rounded transition-all"
+                          className="p-1.5 text-blue-700 hover:bg-blue-50 rounded transition-all cursor-pointer"
                           title="Descargar Formato Word FPJ-35 (.docx)"
                         >
                           <FileDown size={16} />
                         </button>
                         <button 
                           onClick={() => marcarComoCitado(p)}
-                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-all"
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-all cursor-pointer"
                           title="Marcar como Citado (Mover a Citados)"
                         >
                           <CheckCircle size={16} />
                         </button>
                         <button 
                           onClick={() => copiarAlPortapapeles(generarMensaje(p), p)} 
-                          className={`p-1.5 rounded transition-all ${copiadoIdx === p.id ? 'bg-green-600 text-white' : 'text-green-600 hover:bg-green-50'}`}
+                          className={`p-1.5 rounded transition-all cursor-pointer ${copiadoIdx === p.id ? 'bg-green-600 text-white' : 'text-green-600 hover:bg-green-50'}`}
                           title="Copiar Texto WhatsApp"
                         >
                           {copiadoIdx === p.id ? <Check size={16} /> : <Copy size={16} />}
                         </button>
                         <button 
-                          onClick={() => eliminarDeHistorial(p.id)} 
-                          className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-all" 
+                          onClick={() => eliminarDeHistorial(p.id, p.nombre)} 
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-all cursor-pointer" 
                           title="Eliminar Citación"
                         >
                           <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* MOBILE CARD */}
+                    <div className="block md:hidden p-3.5 space-y-2.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-2.5">
+                          <input 
+                            type="checkbox" 
+                            className="w-4 h-4 mt-0.5 rounded border-fgn-border text-fgn-blue focus:ring-fgn-blue shrink-0 cursor-pointer"
+                            checked={selectedIds.includes(p.id)}
+                            onChange={() => toggleSelection(p.id)}
+                          />
+                          <div>
+                            <p className="text-xs font-bold text-fgn-blue uppercase">
+                              {p.nombre}{p.identificacion && p.identificacion.trim() ? ` con CC ${p.identificacion.trim()}` : ''}
+                            </p>
+                            {p.fiscal && (
+                              <p className="text-[10px] text-slate-500 font-medium uppercase mt-0.5">
+                                Fiscalía {p.fiscal}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <span className="font-mono text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 shrink-0">
+                          {p.orden}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] bg-slate-50 p-2 rounded border border-slate-100 font-mono">
+                        <span className="text-slate-600">
+                          {p.fecha ? formatDateES(p.fecha).toUpperCase() : '---'}
+                        </span>
+                        {p.hora && (
+                          <span className="text-fgn-blue font-bold">
+                            {formatTimeAMPM(p.hora)}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-end gap-1.5 pt-1 border-t border-slate-100">
+                        <button 
+                          onClick={() => marcarComoCitado(p)}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 font-bold transition-all cursor-pointer"
+                          title="Marcar como Citado"
+                        >
+                          <CheckCircle size={13} /> <span>Citado</span>
+                        </button>
+                        <button 
+                          onClick={() => copiarAlPortapapeles(generarMensaje(p), p)} 
+                          className={`flex items-center gap-1 px-2.5 py-1.5 text-xs rounded border font-bold transition-all cursor-pointer ${copiadoIdx === p.id ? 'bg-green-600 text-white border-green-600' : 'text-green-700 bg-green-50 hover:bg-green-100 border-green-200'}`}
+                        >
+                          {copiadoIdx === p.id ? <Check size={13} /> : <Copy size={13} />}
+                          <span>{copiadoIdx === p.id ? 'Copiado' : 'WhatsApp'}</span>
+                        </button>
+                        <button 
+                          onClick={() => handleDownloadWord(p)}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded border border-indigo-200 font-bold transition-all cursor-pointer"
+                        >
+                          <FileDown size={13} /> <span>Word</span>
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setSelectedCitation(p);
+                            setIsModalOpen(true);
+                          }}
+                          className="p-1.5 text-pink-600 hover:bg-pink-50 rounded border border-pink-200 transition-all cursor-pointer"
+                          title="Ver Detalle"
+                        >
+                          <Eye size={15} />
+                        </button>
+                        <button 
+                          onClick={() => eliminarDeHistorial(p.id, p.nombre)} 
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded border border-red-200 transition-all cursor-pointer" 
+                          title="Eliminar Citación"
+                        >
+                          <Trash2 size={15} />
                         </button>
                       </div>
                     </div>
@@ -2580,7 +3219,7 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
           />
 
           <div className="bg-white rounded-xl border border-fgn-border overflow-hidden shadow-sm">
-            <div className="bg-bg-gray px-6 py-3 border-b border-fgn-border grid grid-cols-12 gap-4 text-[9px] font-bold text-text-muted uppercase tracking-widest">
+            <div className="hidden md:grid bg-bg-gray px-6 py-3 border-b border-fgn-border grid-cols-12 gap-4 text-[9px] font-bold text-text-muted uppercase tracking-widest">
               <div className="col-span-3">PARTICIPANTE</div>
               <div className="col-span-2">ORDEN OPJ</div>
               <div 
@@ -2610,8 +3249,9 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                 </div>
               ) : (
                 paginatedCitados.map((p) => (
-                  <div key={p.id} className="group hover:bg-slate-50 transition-colors">
-                    <div className="px-6 py-4 grid grid-cols-12 gap-4 items-center">
+                  <div key={p.id} className="group hover:bg-slate-50/70 transition-colors">
+                    {/* DESKTOP ROW */}
+                    <div className="hidden md:grid px-6 py-4 grid-cols-12 gap-4 items-center">
                       <div className="col-span-3">
                         <p className="text-xs font-bold text-fgn-blue uppercase">
                           {p.nombre}{p.identificacion && p.identificacion.trim() ? ` con CC ${p.identificacion.trim()}` : ''}
@@ -2632,14 +3272,14 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                       <div className="col-span-2 flex items-center justify-center gap-2">
                         <button 
                           onClick={() => marcarInforme(p.id, p.informe === 'si' ? null : 'si')}
-                          className={`p-1.5 rounded transition-all border ${p.informe === 'si' ? 'bg-fgn-blue text-white border-fgn-blue shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-fgn-blue hover:border-fgn-blue'}`}
+                          className={`p-1.5 rounded transition-all border ${p.informe === 'si' ? 'bg-fgn-blue text-white border-fgn-blue shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-fgn-blue hover:border-fgn-blue cursor-pointer'}`}
                           title={p.informe === 'si' ? 'Informe Realizado (Clic para desmarcar)' : 'Marcar con Informe'}
                         >
                           <FileCheck size={14} />
                         </button>
                         <button 
                           onClick={() => marcarInforme(p.id, p.informe === 'no' ? null : 'no')}
-                          className={`p-1.5 rounded transition-all border ${p.informe === 'no' ? 'bg-slate-500 text-white border-slate-500 shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-slate-500 hover:border-slate-500'}`}
+                          className={`p-1.5 rounded transition-all border ${p.informe === 'no' ? 'bg-slate-500 text-white border-slate-500 shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-slate-500 hover:border-slate-500 cursor-pointer'}`}
                           title={p.informe === 'no' ? 'Marcado Sin Informe (Clic para desmarcar)' : 'Marcar Sin Informe'}
                         >
                           <FileX size={14} />
@@ -2648,14 +3288,14 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                       <div className="col-span-2 flex items-center justify-center gap-2">
                         <button 
                           onClick={() => marcarAsistencia(p.id, p.asistencia === 'asistio' ? null : 'asistio')}
-                          className={`p-1.5 rounded transition-all border ${p.asistencia === 'asistio' ? 'bg-green-600 text-white border-green-600 shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-green-500 hover:border-green-500'}`}
+                          className={`p-1.5 rounded transition-all border ${p.asistencia === 'asistio' ? 'bg-green-600 text-white border-green-600 shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-green-500 hover:border-green-500 cursor-pointer'}`}
                           title={p.asistencia === 'asistio' ? 'Asistió (Clic para desmarcar)' : 'Marcar Asistió'}
                         >
                           <UserCheck size={14} />
                         </button>
                         <button 
                           onClick={() => marcarAsistencia(p.id, p.asistencia === 'no_asistio' ? null : 'no_asistio')}
-                          className={`p-1.5 rounded transition-all border ${p.asistencia === 'no_asistio' ? 'bg-red-600 text-white border-red-600 shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-red-500 hover:border-red-500'}`}
+                          className={`p-1.5 rounded transition-all border ${p.asistencia === 'no_asistio' ? 'bg-red-600 text-white border-red-600 shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-red-500 hover:border-red-500 cursor-pointer'}`}
                           title={p.asistencia === 'no_asistio' ? 'No Asistió (Clic para desmarcar)' : 'Marcar No Asistió'}
                         >
                           <UserX size={14} />
@@ -2667,31 +3307,138 @@ Por favor comunicarse lo antes posible a el numero ${telefono} (Llamada o WhatsA
                             setSelectedCitation(p);
                             setIsModalOpen(true);
                           }}
-                          className="p-1.5 text-pink-600 hover:bg-pink-50 rounded transition-all"
+                          className="p-1.5 text-pink-600 hover:bg-pink-50 rounded transition-all cursor-pointer"
                           title="Ver Citación"
                         >
                           <Eye size={16} />
                         </button>
                         <button 
                           onClick={() => handleDownloadWord(p)}
-                          className="p-1.5 text-blue-700 hover:bg-blue-50 rounded transition-all"
+                          className="p-1.5 text-blue-700 hover:bg-blue-50 rounded transition-all cursor-pointer"
                           title="Descargar Formato Word FPJ-35 (.docx)"
                         >
                           <FileDown size={16} />
                         </button>
                         <button 
                           onClick={() => copiarAlPortapapeles(generarMensaje(p), p)} 
-                          className={`p-1.5 rounded transition-all ${copiadoIdx === p.id ? 'bg-green-600 text-white' : 'text-green-600 hover:bg-green-50'}`}
+                          className={`p-1.5 rounded transition-all cursor-pointer ${copiadoIdx === p.id ? 'bg-green-600 text-white' : 'text-green-600 hover:bg-green-50'}`}
                           title="Copiar Texto WhatsApp"
                         >
                           {copiadoIdx === p.id ? <Check size={16} /> : <Copy size={16} />}
                         </button>
                         <button 
-                          onClick={() => eliminarDeHistorial(p.id)} 
-                          className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-all" 
+                          onClick={() => eliminarDeHistorial(p.id, p.nombre)} 
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-all cursor-pointer" 
                           title="Eliminar Citación"
                         >
                           <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* MOBILE CARD */}
+                    <div className="block md:hidden p-3.5 space-y-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-bold text-fgn-blue uppercase">
+                            {p.nombre}{p.identificacion && p.identificacion.trim() ? ` con CC ${p.identificacion.trim()}` : ''}
+                          </p>
+                          {p.fiscal && (
+                            <p className="text-[10px] text-slate-500 font-medium uppercase mt-0.5">
+                              Fiscalía {p.fiscal}
+                            </p>
+                          )}
+                        </div>
+                        <span className="font-mono text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 shrink-0">
+                          {p.orden}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] bg-slate-50 p-2 rounded border border-slate-100 font-mono">
+                        <span className="text-slate-600">
+                          {p.fecha ? formatDateES(p.fecha).toUpperCase() : '---'}
+                        </span>
+                        {p.hora && (
+                          <span className="text-fgn-blue font-bold">
+                            {formatTimeAMPM(p.hora)}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        {/* Informe controls */}
+                        <div className="flex items-center justify-between p-1.5 bg-slate-50 rounded border border-slate-200 text-[10px]">
+                          <span className="font-bold text-slate-600 uppercase">Informe:</span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => marcarInforme(p.id, p.informe === 'si' ? null : 'si')}
+                              className={`p-1.5 rounded transition-all border ${p.informe === 'si' ? 'bg-fgn-blue text-white border-fgn-blue' : 'bg-white text-slate-400 border-slate-300'}`}
+                              title="Con Informe"
+                            >
+                              <FileCheck size={13} />
+                            </button>
+                            <button
+                              onClick={() => marcarInforme(p.id, p.informe === 'no' ? null : 'no')}
+                              className={`p-1.5 rounded transition-all border ${p.informe === 'no' ? 'bg-slate-600 text-white border-slate-600' : 'bg-white text-slate-400 border-slate-300'}`}
+                              title="Sin Informe"
+                            >
+                              <FileX size={13} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Asistencia controls */}
+                        <div className="flex items-center justify-between p-1.5 bg-slate-50 rounded border border-slate-200 text-[10px]">
+                          <span className="font-bold text-slate-600 uppercase">Asistencia:</span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => marcarAsistencia(p.id, p.asistencia === 'asistio' ? null : 'asistio')}
+                              className={`p-1.5 rounded transition-all border ${p.asistencia === 'asistio' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-400 border-slate-300'}`}
+                              title="Asistió"
+                            >
+                              <UserCheck size={13} />
+                            </button>
+                            <button
+                              onClick={() => marcarAsistencia(p.id, p.asistencia === 'no_asistio' ? null : 'no_asistio')}
+                              className={`p-1.5 rounded transition-all border ${p.asistencia === 'no_asistio' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-400 border-slate-300'}`}
+                              title="No Asistió"
+                            >
+                              <UserX size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-end gap-1.5 pt-1 border-t border-slate-100">
+                        <button 
+                          onClick={() => copiarAlPortapapeles(generarMensaje(p), p)} 
+                          className={`flex items-center gap-1 px-2.5 py-1.5 text-xs rounded border font-bold transition-all cursor-pointer ${copiadoIdx === p.id ? 'bg-green-600 text-white border-green-600' : 'text-green-700 bg-green-50 hover:bg-green-100 border-green-200'}`}
+                        >
+                          {copiadoIdx === p.id ? <Check size={13} /> : <Copy size={13} />}
+                          <span>{copiadoIdx === p.id ? 'Copiado' : 'WhatsApp'}</span>
+                        </button>
+                        <button 
+                          onClick={() => handleDownloadWord(p)}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded border border-indigo-200 font-bold transition-all cursor-pointer"
+                        >
+                          <FileDown size={13} /> <span>Word</span>
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setSelectedCitation(p);
+                            setIsModalOpen(true);
+                          }}
+                          className="p-1.5 text-pink-600 hover:bg-pink-50 rounded border border-pink-200 transition-all cursor-pointer"
+                          title="Ver Citación"
+                        >
+                          <Eye size={15} />
+                        </button>
+                        <button 
+                          onClick={() => eliminarDeHistorial(p.id, p.nombre)} 
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded border border-red-200 transition-all cursor-pointer" 
+                          title="Eliminar Citación"
+                        >
+                          <Trash2 size={15} />
                         </button>
                       </div>
                     </div>

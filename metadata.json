@@ -1,6 +1,6 @@
 {
-  "name": "Ecosistema Digital de Citaciones - Fiscalía General",
-  "description": "Herramienta especializada para investigadores de la Unidad de Patrimonio Económico de la Fiscalía General de la Nación. Automatiza la creación, formato y archivo de citaciones judiciales mediante IA y almacenamiento seguro en la nube.",
+  "name": "SICIJ - Sistema Integrado de Citaciones Judiciales",
+  "description": "Sistema Integrado de Citaciones Judiciales (SICIJ). Herramienta especializada para la gestión, extracción mediante IA y generación automatizada de citaciones y formatos FPJ-35 de la Fiscalía General de la Nación.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

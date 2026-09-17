@@ -1,5 +1,5 @@
-import React from 'react';
-import { Search, Filter, X, RotateCcw, Calendar, Building, FileCheck2, UserCheck2, Tag } from 'lucide-react';
+import React, { useState } from 'react';
+import { Search, Filter, X, RotateCcw, Calendar, Building, FileCheck2, UserCheck2, Tag, ChevronDown, ChevronUp } from 'lucide-react';
 import { CitacionFilters } from '../types';
 
 interface CitationFilterBarProps {
@@ -25,14 +25,21 @@ export const CitationFilterBar: React.FC<CitationFilterBarProps> = ({
   filteredCount,
   placeholderSearch = "BUSCAR POR NOMBRE, CÉDULA, No. ORDEN O MOTIVO..."
 }) => {
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+
+  // Count active non-search filters
+  const activeFilterCount = [
+    filters.fiscal !== 'todos',
+    filters.fechaFiltro !== 'todas',
+    filters.fechaFiltro === 'rango' && (filters.fechaDesde || filters.fechaHasta),
+    showEstadoFilter && filters.estado && filters.estado !== 'todos',
+    showInformeFilter && filters.informe && filters.informe !== 'todos',
+    showAsistenciaFilter && filters.asistencia && filters.asistencia !== 'todas'
+  ].filter(Boolean).length;
+
   const isFiltered = Boolean(
     filters.searchTerm.trim() ||
-    filters.fiscal !== 'todos' ||
-    filters.fechaFiltro !== 'todas' ||
-    (filters.fechaFiltro === 'rango' && (filters.fechaDesde || filters.fechaHasta)) ||
-    (showEstadoFilter && filters.estado && filters.estado !== 'todos') ||
-    (showInformeFilter && filters.informe && filters.informe !== 'todos') ||
-    (showAsistenciaFilter && filters.asistencia && filters.asistencia !== 'todas')
+    activeFilterCount > 0
   );
 
   const handleReset = () => {
@@ -49,9 +56,9 @@ export const CitationFilterBar: React.FC<CitationFilterBarProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-xl border border-fgn-border p-4 shadow-2xs space-y-3">
+    <div className="bg-white rounded-xl border border-fgn-border p-3 sm:p-4 shadow-2xs space-y-2.5 sm:space-y-3">
       {/* Top row: Search input + active filter badges + Reset */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+      <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2.5 sm:gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
           <input
@@ -65,7 +72,7 @@ export const CitationFilterBar: React.FC<CitationFilterBarProps> = ({
             <button
               type="button"
               onClick={() => onFilterChange({ ...filters, searchTerm: '' })}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
             >
               <X size={14} />
             </button>
@@ -73,25 +80,45 @@ export const CitationFilterBar: React.FC<CitationFilterBarProps> = ({
         </div>
 
         <div className="flex items-center justify-between md:justify-end gap-2 shrink-0">
-          <div className="text-[11px] font-mono px-3 py-1.5 bg-slate-100 border border-slate-200 rounded-lg text-slate-700">
-            <strong>{filteredCount}</strong> de <strong>{totalCount}</strong> registros
+          {/* Mobile Filter Toggle Button */}
+          <button
+            type="button"
+            onClick={() => setShowMobileFilters(!showMobileFilters)}
+            className={`md:hidden flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded-lg border transition-colors cursor-pointer ${
+              activeFilterCount > 0 || showMobileFilters
+                ? 'bg-fgn-blue text-white border-fgn-blue shadow-xs'
+                : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+            }`}
+          >
+            <Filter size={13} />
+            <span>Filtros</span>
+            {activeFilterCount > 0 && (
+              <span className="bg-amber-400 text-slate-900 text-[9px] font-black px-1.5 py-0.2 rounded-full">
+                {activeFilterCount}
+              </span>
+            )}
+            {showMobileFilters ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </button>
+
+          <div className="text-[10px] sm:text-[11px] font-mono px-2.5 sm:px-3 py-1.5 bg-slate-100 border border-slate-200 rounded-lg text-slate-700">
+            <strong>{filteredCount}</strong> de <strong>{totalCount}</strong>
           </div>
 
           {isFiltered && (
             <button
               type="button"
               onClick={handleReset}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors uppercase tracking-wider"
+              className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 text-[10px] sm:text-[11px] font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors uppercase tracking-wider cursor-pointer"
               title="Restablecer todos los filtros"
             >
-              <RotateCcw size={13} /> Limpiar Filtros
+              <RotateCcw size={12} /> <span className="hidden xs:inline">Limpiar</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* Second row: Filter dropdowns */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2.5 pt-1 border-t border-slate-100 text-xs">
+      {/* Second row: Filter dropdowns (collapsible on mobile, always visible on md+) */}
+      <div className={`${showMobileFilters ? 'grid' : 'hidden md:grid'} grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2.5 pt-2 border-t border-slate-100 text-xs`}>
         {/* Despacho Fiscal */}
         <div className="flex flex-col gap-1">
           <label className="text-[9px] font-bold text-text-muted uppercase tracking-wider flex items-center gap-1">

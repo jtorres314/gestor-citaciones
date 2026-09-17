@@ -59,4 +59,21 @@ export interface CitacionFilters {
   informe?: 'todos' | 'si' | 'no' | 'sin_marcar';
 }
 
+export interface ExcelInsumoRow {
+  id: string;
+  ot: string;
+  opj: string;
+  nunc: string;
+  fiscal: string;
+  nombre: string;
+  cedula: string;
+  direccion: string;
+  telefono: string;
+  correo: string;
+  fecha: string;
+  hora: string;
+  generada?: boolean;
+  fechaGeneracion?: string;
+}
+
 export type PageSizeOption = 10 | 20 | 50 | 'todos';

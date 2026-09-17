@@ -53,37 +53,39 @@ export const PaginationControls: React.FC<PaginationControlsProps> = ({
   const pageSizeOptions: PageSizeOption[] = [10, 20, 50, 'todos'];
 
   return (
-    <div className="bg-slate-50 border-t border-fgn-border/60 px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
+    <div className="bg-slate-50 border-t border-fgn-border/60 px-3 sm:px-6 py-2.5 sm:py-3 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 text-xs">
       {/* Left: Page Size Selector & Count Info */}
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="text-text-muted font-bold uppercase tracking-wider text-[10px]">
-          Mostrar:
-        </span>
-        <div className="inline-flex rounded-lg border border-fgn-border bg-white p-0.5 shadow-2xs">
-          {pageSizeOptions.map((opt) => {
-            const isActive = pageSize === opt;
-            return (
-              <button
-                key={opt}
-                type="button"
-                onClick={() => onPageSizeChange(opt)}
-                className={`px-2.5 py-1 text-[11px] font-bold uppercase rounded transition-colors ${
-                  isActive
-                    ? 'bg-fgn-blue text-white shadow-xs'
-                    : 'text-slate-600 hover:text-fgn-blue hover:bg-slate-100'
-                }`}
-              >
-                {opt === 'todos' ? 'Todos' : opt}
-              </button>
-            );
-          })}
+      <div className="flex flex-wrap items-center justify-between sm:justify-start w-full sm:w-auto gap-2 sm:gap-3">
+        <div className="flex items-center gap-1.5">
+          <span className="text-text-muted font-bold uppercase tracking-wider text-[10px]">
+            Mostrar:
+          </span>
+          <div className="inline-flex rounded-lg border border-fgn-border bg-white p-0.5 shadow-2xs">
+            {pageSizeOptions.map((opt) => {
+              const isActive = pageSize === opt;
+              return (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => onPageSizeChange(opt)}
+                  className={`px-2 sm:px-2.5 py-1 text-[10px] sm:text-[11px] font-bold uppercase rounded transition-colors ${
+                    isActive
+                      ? 'bg-fgn-blue text-white shadow-xs'
+                      : 'text-slate-600 hover:text-fgn-blue hover:bg-slate-100'
+                  }`}
+                >
+                  {opt === 'todos' ? 'Todos' : opt}
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <span className="text-slate-500 font-mono text-[11px]">
+        <span className="text-slate-500 font-mono text-[10px] sm:text-[11px] text-right sm:text-left">
           {isAll ? (
-            <>Mostrando los <strong>{totalItems}</strong> {itemLabel}</>
+            <><strong>{totalItems}</strong> {itemLabel}</>
           ) : (
             <>
-              Mostrando <strong>{startIdx}</strong>–<strong>{endIdx}</strong> de <strong>{totalItems}</strong> {itemLabel}
+              <strong>{startIdx}</strong>–<strong>{endIdx}</strong> / <strong>{totalItems}</strong>
             </>
           )}
         </span>
@@ -91,27 +93,35 @@ export const PaginationControls: React.FC<PaginationControlsProps> = ({
 
       {/* Right: Navigation Controls (Only shown when not 'todos' and totalPages > 1) */}
       {!isAll && totalPages > 1 && (
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => onPageChange(1)}
-            disabled={currentPage === 1}
-            className="p-1.5 rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition-colors"
-            title="Primera página"
-          >
-            <ChevronsLeft size={14} />
-          </button>
-          <button
-            type="button"
-            onClick={() => onPageChange(currentPage - 1)}
-            disabled={currentPage === 1}
-            className="p-1.5 rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition-colors"
-            title="Página anterior"
-          >
-            <ChevronLeft size={14} />
-          </button>
+        <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-1 sm:gap-1.5">
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => onPageChange(1)}
+              disabled={currentPage === 1}
+              className="p-1.5 rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+              title="Primera página"
+            >
+              <ChevronsLeft size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onPageChange(currentPage - 1)}
+              disabled={currentPage === 1}
+              className="p-1.5 rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+              title="Página anterior"
+            >
+              <ChevronLeft size={14} />
+            </button>
+          </div>
 
-          <div className="flex items-center gap-1 mx-1">
+          {/* Compact page indicator on mobile */}
+          <span className="sm:hidden font-mono text-[11px] font-bold text-slate-700 px-2">
+            {currentPage} / {totalPages}
+          </span>
+
+          {/* Full page pills on desktop */}
+          <div className="hidden sm:flex items-center gap-1 mx-1">
             {getPageNumbers().map((p, idx) => {
               if (p === '...') {
                 return (
@@ -138,24 +148,26 @@ export const PaginationControls: React.FC<PaginationControlsProps> = ({
             })}
           </div>
 
-          <button
-            type="button"
-            onClick={() => onPageChange(currentPage + 1)}
-            disabled={currentPage === totalPages}
-            className="p-1.5 rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition-colors"
-            title="Página siguiente"
-          >
-            <ChevronRight size={14} />
-          </button>
-          <button
-            type="button"
-            onClick={() => onPageChange(totalPages)}
-            disabled={currentPage === totalPages}
-            className="p-1.5 rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition-colors"
-            title="Última página"
-          >
-            <ChevronsRight size={14} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => onPageChange(currentPage + 1)}
+              disabled={currentPage === totalPages}
+              className="p-1.5 rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+              title="Página siguiente"
+            >
+              <ChevronRight size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onPageChange(totalPages)}
+              disabled={currentPage === totalPages}
+              className="p-1.5 rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+              title="Última página"
+            >
+              <ChevronsRight size={14} />
+            </button>
+          </div>
         </div>
       )}
     </div>
