@@ -3,13 +3,17 @@ export interface Citacion {
   nombre: string;
   genero: 'Femenino' | 'Masculino';
   orden: string;
+  nunc?: string;
   fiscal: string;
+  delito?: string;
   unidad: string;
   fecha: string;
   hora: string;
   telefono?: string;
   correo?: string;
   identificacion?: string;
+  cedula?: string;
+  ciudad?: string;
   motivo?: string;
   direccion?: string;
   instalaciones?: string;
@@ -66,6 +70,7 @@ export interface ExcelInsumoRow {
   opj: string;
   nunc: string;
   fiscal: string;
+  delito?: string;
   nombre: string;
   cedula: string;
   direccion: string;

@@ -169,6 +169,7 @@ export const isHeaderCell = (cellVal: any): string | null => {
   if (/^(OPJ|POLICIA(\s*JUDICIAL)?|O\.P\.J\.|ORDEN\s*POLICIA)$/i.test(norm)) return 'opj';
   if (/^(NUNC|NOTICIA(\s*CRIMINAL)?|SPOA|RADICADO(\s*INTERNO)?|NOTICIA)$/i.test(norm)) return 'nunc';
   if (/^(FISCAL|DESPACHO|UNIDAD(\s*RECEPTORA)?|FISCALIA)$/i.test(norm)) return 'fiscal';
+  if (/^(DELITO|CONDUCTA|PUNITIVA|TIPO\s*PENAL|HECHO|DELITOS)$/i.test(norm)) return 'delito';
   if (/^(NOMBRE(S)?|CITADO|PERSONA|NOMBRE\s*COMPLETO|PARTICIPANTE|DATOS\s*CITADO)$/i.test(norm)) return 'nombre';
   if (/^(CEDULA|IDENTIFICACION|DOCUMENTO|C\.?C\.?|NRO\s*IDENTIFICACION|NUMERO\s*DOCUMENTO)$/i.test(norm)) return 'cedula';
   if (/^(DIRECCION|DOMICILIO|RESIDENCIA|UBICACION|DIRECCION\s*RESIDENCIA)$/i.test(norm)) return 'direccion';
@@ -186,13 +187,14 @@ export const detectIfHeaderRow = (rowCells: any[]): { isHeader: boolean; colMap:
     opj: 1,
     nunc: 2,
     fiscal: 3,
-    nombre: 4,
-    cedula: 5,
-    direccion: 6,
-    telefono: 7,
-    correo: 8,
-    fecha: 9,
-    hora: 10
+    delito: 4,
+    nombre: 5,
+    cedula: 6,
+    direccion: 7,
+    telefono: 8,
+    correo: 9,
+    fecha: 10,
+    hora: 11
   };
 
   if (!Array.isArray(rowCells) || rowCells.length === 0) {
@@ -246,6 +248,7 @@ export const createEmptyRow = (): ExcelInsumoRow => ({
   opj: '',
   nunc: '',
   fiscal: '',
+  delito: '',
   nombre: '',
   cedula: '',
   direccion: '',
@@ -410,19 +413,20 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
   };
 
   // Validaciones estrictas para pegar datos del portapapeles
-  const REQUIRED_COLUMNS_COUNT = 11;
+  const REQUIRED_COLUMNS_COUNT = 12;
   const EXPECTED_COLUMNS_NAMES = [
     '1. OT (Orden de Trabajo)',
     '2. OPJ (Orden de Policía Judicial)',
     '3. NUNC (Noticia Criminal - 21 dígitos)',
     '4. FISCAL (Despacho / Fiscalía)',
-    '5. NOMBRE (Nombre completo del citado)',
-    '6. CEDULA (Documento de identidad)',
-    '7. DIRECCION (Dirección de residencia / citación)',
-    '8. TELEFONO (Teléfono o WhatsApp)',
-    '9. CORREO (Correo electrónico)',
-    '10. FECHA (Fecha de citación YYYY-MM-DD)',
-    '11. HORA (Hora de citación)'
+    '5. DELITO (Delito del Caso)',
+    '6. NOMBRE (Nombre completo del citado)',
+    '7. CEDULA (Documento de identidad)',
+    '8. DIRECCION (Dirección de residencia / citación)',
+    '9. TELEFONO (Teléfono o WhatsApp)',
+    '10. CORREO (Correo electrónico)',
+    '11. FECHA (Fecha de citación YYYY-MM-DD)',
+    '12. HORA (Hora de citación)'
   ];
 
   const validateAndProcessPastedText = (rawString: string): boolean => {
@@ -510,6 +514,7 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
       const opj = getCol(colMap.opj);
       const nunc = getCol(colMap.nunc);
       const fiscal = getCol(colMap.fiscal);
+      const delito = getCol(colMap.delito);
       const nombre = getCol(colMap.nombre);
       const cedula = getCol(colMap.cedula);
       const direccion = getCol(colMap.direccion);
@@ -519,7 +524,7 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
       const rawHora = getCol(colMap.hora);
 
       // Verificar que no sea una fila fantasma o sin ningún identificador
-      if (!nombre && !opj && !ot && !nunc && !cedula && !direccion && !telefono && !correo) {
+      if (!nombre && !opj && !ot && !nunc && !cedula && !direccion && !telefono && !correo && !delito) {
         structuralError = `La fila ${rowDisplayNum} no contiene datos de citación.`;
         break;
       }
@@ -541,6 +546,7 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
         opj,
         nunc,
         fiscal,
+        delito,
         nombre,
         cedula,
         direccion,
@@ -570,7 +576,7 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
               </p>
             </div>
             <p style="font-weight: 700; color: #003366; margin: 8px 0 4px 0; font-size: 12px;">
-              Estructura obligatoria requerida (11 columnas):
+              Estructura obligatoria requerida (12 columnas):
             </p>
             <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-family: monospace; font-size: 11px; color: #1e293b; max-height: 130px; overflow-y: auto;">
               <ol style="margin: 0 0 0 16px; padding: 0; line-height: 1.45;">
@@ -689,6 +695,7 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
             opj: getCol(colMap.opj),
             nunc: getCol(colMap.nunc),
             fiscal: getCol(colMap.fiscal),
+            delito: getCol(colMap.delito),
             nombre: getCol(colMap.nombre),
             cedula: getCol(colMap.cedula),
             direccion: getCol(colMap.direccion),
@@ -698,7 +705,7 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
             hora: hora,
             generada: false // Nuevas filas se marcan como pendientes
           };
-        }).filter(r => r.nombre || r.opj || r.ot || r.nunc || r.cedula || r.direccion || r.telefono || r.correo);
+        }).filter(r => r.nombre || r.opj || r.ot || r.nunc || r.cedula || r.direccion || r.telefono || r.correo || r.delito);
 
         if (newRows.length > 0) {
           onRowsChange([...rows, ...newRows]);
@@ -734,12 +741,13 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
   const handleExportExcel = () => {
     if (rows.length === 0) return;
     const worksheetData = [
-      ['OT', 'OPJ', 'NUNC', 'FISCAL', 'NOMBRE', 'CEDULA', 'DIRECCION', 'TELEFONO', 'CORREO', 'FECHA', 'HORA', 'GENERADA', 'FECHA_GENERACION'],
+      ['OT', 'OPJ', 'NUNC', 'FISCAL', 'DELITO', 'NOMBRE', 'CEDULA', 'DIRECCION', 'TELEFONO', 'CORREO', 'FECHA', 'HORA', 'GENERADA', 'FECHA_GENERACION'],
       ...rows.map(r => [
         r.ot,
         r.opj,
         r.nunc,
         r.fiscal,
+        r.delito || '',
         r.nombre,
         r.cedula,
         r.direccion,
@@ -831,7 +839,7 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
           <button
             onClick={handleClipboardPasteButtonClick}
             className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 font-black rounded border border-emerald-300 shadow-xs transition-colors text-[10px] sm:text-[11px] uppercase tracking-wider cursor-pointer"
-            title="Pegar datos del portapapeles con validación estricta de estructura (11 columnas)"
+            title="Pegar datos del portapapeles con validación estricta de estructura (12 columnas)"
           >
             <ClipboardPaste size={14} className="text-emerald-700" /> Pegar (Ctrl+V)
           </button>
@@ -1017,6 +1025,12 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
                       <span className="text-[9px] text-slate-500 font-bold uppercase block">Fiscalía:</span>
                       <span className="text-slate-800 font-semibold">{row.fiscal || '---'}</span>
                     </div>
+                    {row.delito && (
+                      <div>
+                        <span className="text-[9px] text-slate-500 font-bold uppercase block">Delito:</span>
+                        <span className="text-slate-800 font-semibold">{row.delito}</span>
+                      </div>
+                    )}
                     <div>
                       <span className="text-[9px] text-slate-500 font-bold uppercase block">Fecha y Hora:</span>
                       <span className="text-fgn-blue font-bold">
@@ -1060,7 +1074,7 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
       <div className={`${mobileViewMode === 'cards' ? 'hidden sm:block' : 'block'} bg-white rounded-xl border border-slate-300 shadow-sm overflow-hidden`}>
         {/* Banner informativo de desplazamiento táctil para móviles */}
         <div className="sm:hidden px-3 py-1.5 bg-amber-50/80 border-b border-amber-200 text-amber-900 text-[10px] font-semibold flex items-center justify-between">
-          <span>↔ Desliza para ver las 11 columnas o toca ✎ para editar</span>
+          <span>↔ Desliza para ver las 12 columnas o toca ✎ para editar</span>
           <span className="font-bold">{rows.length} filas</span>
         </div>
 
@@ -1090,6 +1104,7 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
                   { key: 'opj', label: 'OPJ', width: 'w-28 min-w-[110px]' },
                   { key: 'nunc', label: 'NUNC', width: 'w-48 min-w-[190px]' },
                   { key: 'fiscal', label: 'FISCAL', width: 'w-32 min-w-[130px]' },
+                  { key: 'delito', label: 'DELITO', width: 'w-48 min-w-[180px]' },
                   { key: 'nombre', label: 'NOMBRE', width: 'w-64 min-w-[240px]' },
                   { key: 'cedula', label: 'CEDULA', width: 'w-32 min-w-[130px]' },
                   { key: 'direccion', label: 'DIRECCION', width: 'w-60 min-w-[220px]' },
@@ -1263,6 +1278,20 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
                           onChange={(e) => updateCell(row.id, 'fiscal', e.target.value)}
                           placeholder="Ej: 17 Local"
                           className="w-full h-full px-2.5 py-2 bg-transparent text-xs outline-none focus:bg-amber-50 focus:ring-1 focus:ring-fgn-blue"
+                        />
+                      </td>
+
+                      {/* Celda DELITO */}
+                      <td 
+                        style={{ backgroundColor: isGenerada ? 'rgb(255, 238, 185)' : undefined }}
+                        className="p-0 border-r border-slate-200"
+                      >
+                        <input
+                          type="text"
+                          value={row.delito || ''}
+                          onChange={(e) => updateCell(row.id, 'delito', e.target.value)}
+                          placeholder="Ej: Hurto Agravado"
+                          className="w-full h-full px-2.5 py-2 bg-transparent text-xs outline-none focus:bg-amber-50 focus:ring-1 focus:ring-fgn-blue font-medium"
                         />
                       </td>
 
@@ -1527,18 +1556,32 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Cédula</label>
+                  <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Delito del Caso</label>
                   <input
                     type="text"
-                    value={editingRowMobile.cedula}
+                    value={editingRowMobile.delito || ''}
                     onChange={(e) => {
-                      updateCell(editingRowMobile.id, 'cedula', e.target.value);
-                      setEditingRowMobile({ ...editingRowMobile, cedula: e.target.value });
+                      updateCell(editingRowMobile.id, 'delito', e.target.value);
+                      setEditingRowMobile({ ...editingRowMobile, delito: e.target.value });
                     }}
-                    placeholder="Documento..."
-                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded text-xs font-mono outline-none focus:border-fgn-blue"
+                    placeholder="Ej: Hurto Agravado"
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded text-xs outline-none focus:border-fgn-blue font-medium"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Cédula</label>
+                <input
+                  type="text"
+                  value={editingRowMobile.cedula}
+                  onChange={(e) => {
+                    updateCell(editingRowMobile.id, 'cedula', e.target.value);
+                    setEditingRowMobile({ ...editingRowMobile, cedula: e.target.value });
+                  }}
+                  placeholder="Documento..."
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded text-xs font-mono outline-none focus:border-fgn-blue"
+                />
               </div>
 
               <div>
@@ -1674,10 +1717,10 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
                 Seleccione y copie (<b>Ctrl+C</b>) las filas en su archivo Excel e inserte el texto copiado (<b>Ctrl+V</b>) en el recuadro a continuación.
               </p>
               <div className="bg-amber-50 border border-amber-200 rounded p-2.5 text-amber-900 text-[11px]">
-                <b>Validación Estricta:</b> La información debe contener exactamente las <b>11 columnas</b> reglamentarias en este orden:
+                <b>Validación Estricta:</b> La información debe contener exactamente las <b>12 columnas</b> reglamentarias en este orden:
                 <br />
                 <span className="font-mono text-[10px] text-slate-700 bg-white/80 p-1 rounded mt-1 inline-block border border-amber-300/50 break-all">
-                  OT | OPJ | NUNC | FISCAL | NOMBRE | CEDULA | DIRECCION | TELEFONO | CORREO | FECHA | HORA
+                  OT | OPJ | NUNC | FISCAL | DELITO | NOMBRE | CEDULA | DIRECCION | TELEFONO | CORREO | FECHA | HORA
                 </span>
               </div>
 
@@ -1685,7 +1728,7 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
                 rows={6}
                 value={pasteText}
                 onChange={(e) => setPasteText(e.target.value)}
-                placeholder="Pegue aquí el contenido de su archivo Excel (filas con 11 columnas separadas por tabulaciones)..."
+                placeholder="Pegue aquí el contenido de su archivo Excel (filas con 12 columnas separadas por tabulaciones)..."
                 className="w-full p-3 bg-slate-50 border border-slate-300 rounded font-mono text-xs text-slate-800 outline-none focus:border-fgn-blue focus:ring-1 focus:ring-fgn-blue resize-none"
               />
             </div>

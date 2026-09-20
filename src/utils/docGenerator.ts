@@ -45,6 +45,7 @@ export interface CitationData {
 
   // Fiscalía / Causa
   fiscal?: string;
+  delito?: string;
   unidad?: string;
 
   // Investigador / Cita
@@ -408,9 +409,17 @@ export async function generateFPJ35WordDocument(citation: CitationData): Promise
                           new TextRun({ text: `${citation.direccionInstalaciones || 'Sede Fiscalía - Canapote / Crespo'}`, bold: true, underline: {}, size: 18, font: "Calibri" }),
                           new TextRun({ text: " para ", size: 18, font: "Calibri" }),
                           new TextRun({ text: `${citation.motivo || 'rendir entrevista dentro de las diligencias investigativas relacionadas en el proceso'}`, bold: true, underline: {}, size: 18, font: "Calibri" }),
-                          new TextRun({ text: ",\ndentro del proceso de la referencia (Fiscalía: ", size: 18, font: "Calibri" }),
-                          new TextRun({ text: `${citation.fiscal || '17 Local'}`, bold: true, underline: {}, size: 18, font: "Calibri" }),
-                          new TextRun({ text: ").", size: 18, font: "Calibri" })
+                          new TextRun({ text: ",\ndentro del proceso de la referencia.", size: 18, font: "Calibri" }),
+                          ...(citation.delito && citation.delito.trim() ? [
+                            new TextRun({ text: " (", size: 18, font: "Calibri" }),
+                            new TextRun({ text: `${citation.delito.trim()}`, bold: true, underline: {}, size: 18, font: "Calibri" }),
+                            new TextRun({ text: ")", size: 18, font: "Calibri" }),
+                          ] : []),
+                          ...(citation.fiscal && citation.fiscal.trim() ? [
+                            new TextRun({ text: " (Fiscalía: ", size: 18, font: "Calibri" }),
+                            new TextRun({ text: `${citation.fiscal.trim()}`, bold: true, underline: {}, size: 18, font: "Calibri" }),
+                            new TextRun({ text: ").", size: 18, font: "Calibri" })
+                          ] : [])
                         ]
                       })
                     ]
@@ -944,11 +953,12 @@ export async function generateCitationFromTemplate(
     const instalacionesTexto = citation.instalaciones || 'las instalaciones de la Fiscalía General de la Nación';
     const direccionInstalacionesTexto = citation.direccionInstalaciones?.trim();
     const motivoTexto = citation.motivo?.trim() || 'diligencia judicial de entrevista';
+    const delitoTexto = citation.delito?.trim();
 
-    // Generar el párrafo unificado oficial que engloba fecha, hora, lugar, dirección y motivo
+    // Generar el párrafo unificado oficial que engloba fecha, hora, lugar, dirección, motivo y delito
     const motivoCitacionParrafo = direccionInstalacionesTexto
-      ? `Se solicita comparecer el próximo ${fechaComparecenciaTexto} a las ${horaComparecenciaTexto}, en las instalaciones de ${instalacionesTexto}, ubicadas en la ${direccionInstalacionesTexto} para ${motivoTexto}, dentro del proceso de la referencia.`
-      : `Se solicita comparecer el próximo ${fechaComparecenciaTexto} a las ${horaComparecenciaTexto}, en las instalaciones de ${instalacionesTexto} para ${motivoTexto}, dentro del proceso de la referencia.`;
+      ? `Se solicita comparecer el próximo ${fechaComparecenciaTexto} a las ${horaComparecenciaTexto}, en las instalaciones de ${instalacionesTexto}, ubicadas en la ${direccionInstalacionesTexto} para ${motivoTexto}, dentro del proceso de la referencia.${delitoTexto ? ` (${delitoTexto})` : ''}`
+      : `Se solicita comparecer el próximo ${fechaComparecenciaTexto} a las ${horaComparecenciaTexto}, en las instalaciones de ${instalacionesTexto} para ${motivoTexto}, dentro del proceso de la referencia.${delitoTexto ? ` (${delitoTexto})` : ''}`;
 
     const motivoPlaceholder = '___MOTIVO_CITACION_RUNS___';
 
@@ -966,7 +976,12 @@ export async function generateCitationFromTemplate(
       ] : []),
       makeNormalRun(' para '),
       makeBoldUnderlineRun(motivoTexto),
-      makeNormalRun(', dentro del proceso de la referencia.')
+      makeNormalRun(', dentro del proceso de la referencia.'),
+      ...(delitoTexto ? [
+        makeNormalRun(' ('),
+        makeBoldUnderlineRun(delitoTexto),
+        makeNormalRun(')')
+      ] : [])
     ].join('');
 
     const templateData: Record<string, string> = {
@@ -1039,6 +1054,8 @@ export async function generateCitationFromTemplate(
       observaciones: citation.observaciones || 'Presentar documento de identidad original.',
       FISCAL: citation.fiscal || '17 Local',
       fiscal: citation.fiscal || '17 Local',
+      DELITO: citation.delito || '',
+      delito: citation.delito || '',
       UNIDAD: citation.unidad || 'Unidad de Administración Pública',
       unidad: citation.unidad || 'Unidad de Administración Pública',
       INVESTIGADOR: citation.investigador || 'Servidor de Policía Judicial',
