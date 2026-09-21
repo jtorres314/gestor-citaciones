@@ -9,18 +9,10 @@ service cloud.firestore {
 
     // Validation Helper
     function isValidCitacion(data) {
-      return data.keys().hasAll(['nombre', 'orden', 'fecha', 'hora', 'creadoTimestamp']) &&
-             data.nombre is string && data.nombre.size() > 0 && data.nombre.size() <= 200 &&
-             data.genero in ['Femenino', 'Masculino'] &&
-             data.orden is string && data.orden.size() > 0 && data.orden.size() <= 100 &&
-             data.fiscal is string && data.fiscal.size() <= 100 &&
-             data.unidad is string && data.unidad.size() <= 200 &&
-             data.fecha is string && data.fecha.matches('^\\d{4}-\\d{2}-\\d{2}$') &&
-             data.hora is string && data.hora.size() <= 10 &&
-             data.creadoTimestamp is number &&
-             (data.get('estado', 'pendiente') in ['pendiente', 'citado']) &&
-             (data.get('asistencia', null) == null || data.asistencia in ['asistio', 'no_asistio']) &&
-             (data.get('informe', null) == null || data.informe in ['si', 'no']);
+      return data.nombre is string && data.nombre.size() > 0 && data.nombre.size() <= 200 &&
+             data.orden is string && data.orden.size() <= 100 &&
+             data.fecha is string && data.fecha.size() <= 50 &&
+             data.hora is string && data.hora.size() <= 30;
     }
 
     // Default Deny
@@ -39,19 +31,7 @@ service cloud.firestore {
       allow list: if isOwner(userId);
       allow get: if isOwner(userId);
       allow create: if isOwner(userId) && isValidId(citationId) && isValidCitacion(incoming());
-      allow update: if isOwner(userId) && isValidCitacion(incoming()) && 
-                    (
-                      // Option 1: Update metadata (nombre, fecha, etc)
-                      incoming().diff(resource.data).affectedKeys().hasOnly(['nombre', 'genero', 'orden', 'fiscal', 'unidad', 'fecha', 'hora', 'telefono', 'identificacion', 'motivo', 'direccion', 'instalaciones', 'direccionInstalaciones', 'observaciones', 'requiereAbogado']) ||
-                      // Option 2: Change status to 'citado'
-                      incoming().diff(resource.data).affectedKeys().hasOnly(['estado']) ||
-                      // Option 3: Mark attendance
-                      incoming().diff(resource.data).affectedKeys().hasOnly(['asistencia']) ||
-                      // Option 4: Mark judicial report (informe)
-                      incoming().diff(resource.data).affectedKeys().hasOnly(['informe']) ||
-                      // Option 5: Any combination of operational flags
-                      incoming().diff(resource.data).affectedKeys().hasOnly(['estado', 'asistencia', 'informe'])
-                    );
+      allow update: if isOwner(userId) && isValidCitacion(incoming());
       allow delete: if isOwner(userId);
     }
   }

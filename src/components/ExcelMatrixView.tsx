@@ -238,8 +238,9 @@ export const detectIfHeaderRow = (rowCells: any[]): { isHeader: boolean; colMap:
 interface ExcelMatrixViewProps {
   rows: ExcelInsumoRow[];
   onRowsChange: (rows: ExcelInsumoRow[]) => void;
-  onGenerateCitations: () => void;
-  onBack: () => void;
+  onGenerateCitations?: () => void;
+  onGenerateCitation?: (row: ExcelInsumoRow) => void;
+  onBack?: () => void;
 }
 
 export const createEmptyRow = (): ExcelInsumoRow => ({
@@ -786,13 +787,7 @@ export const ExcelMatrixView: React.FC<ExcelMatrixViewProps> = ({
     >
       {/* Barra Superior con Navegación y Acciones Principales */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4 bg-white p-3.5 sm:p-5 rounded-xl border border-fgn-border shadow-sm">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
-          <button 
-            onClick={onBack}
-            className="flex items-center justify-center gap-2 text-text-muted hover:text-fgn-blue font-bold uppercase text-[10px] tracking-widest bg-slate-50 hover:bg-slate-100 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded border border-fgn-border shadow-sm transition-all cursor-pointer w-full sm:w-auto"
-          >
-            <ArrowLeft size={14} strokeWidth={2.5} /> Volver al Inicio
-          </button>
+        <div className="flex items-center gap-3 sm:gap-4">
           <div>
             <div className="flex items-center gap-2">
               <span className="p-1.5 bg-emerald-100 text-emerald-800 rounded shrink-0">
