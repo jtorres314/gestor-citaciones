@@ -287,6 +287,22 @@ export const CitationTable: React.FC<CitationTableProps> = ({
                           ⚠️ Cruce
                         </span>
                       )}
+                      {urgency.status === 'past_due_unattended' && (
+                        <span 
+                          className="inline-flex items-center gap-0.5 text-[9px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded border border-amber-300"
+                          title="Fecha vencida sin registro de asistencia"
+                        >
+                          <Clock size={10} /> Vencida
+                        </span>
+                      )}
+                      {urgency.status === 'today' && (
+                        <span 
+                          className="inline-flex items-center gap-0.5 text-[9px] font-black bg-amber-300 text-amber-950 px-1.5 py-0.5 rounded shadow-2xs animate-pulse"
+                          title="Diligencia programada para hoy"
+                        >
+                          <Flame size={10} /> ¡HOY!
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

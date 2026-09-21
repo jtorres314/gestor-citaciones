@@ -150,7 +150,7 @@ export const getOutlook365Url = (p: Partial<Citacion>, config?: Partial<Investig
 };
 
 // Urgency and Expiration Status Analysis
-export type UrgencyStatus = 'past_due_unattended' | 'today' | 'upcoming_urgent' | 'future' | 'attended';
+export type UrgencyStatus = 'past_due_unattended' | 'today' | 'upcoming_urgent' | 'future' | 'attended' | 'not_attended';
 
 export interface UrgencyInfo {
   status: UrgencyStatus;
@@ -172,6 +172,17 @@ export const analyzeCitationUrgency = (c: Citacion): UrgencyInfo => {
     };
   }
 
+  // Si se marcó que no asistió, se quita el estado de vencida
+  if (c.asistencia === 'no_asistio') {
+    return {
+      status: 'not_attended',
+      badgeLabel: 'No Asistió',
+      badgeColorClass: 'text-red-700 border-red-300',
+      badgeBgClass: 'bg-red-50',
+      isUrgent: false
+    };
+  }
+
   if (!c.fecha) {
     return {
       status: 'future',
@@ -184,6 +195,7 @@ export const analyzeCitationUrgency = (c: Citacion): UrgencyInfo => {
 
   const todayStr = getTodayDateStr();
   
+  // El estado de vencida SOLO estará si no se marca que asistió o no asistió
   if (c.fecha < todayStr) {
     return {
       status: 'past_due_unattended',
