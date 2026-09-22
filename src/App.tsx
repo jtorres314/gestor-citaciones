@@ -66,32 +66,45 @@ import {
 import { GoogleGenAI, Type } from "@google/genai";
 
 // SweetAlert helper notifications
-const showRedAuthErrorAlert = (title: string, message: string, code?: string) => {
-  return Swal.fire({
-    icon: 'error',
-    iconColor: '#dc2626',
-    title: `<span style="color: #dc2626; font-weight: 800; font-size: 1.25rem;">${title}</span>`,
+const showRedAuthErrorAlert = async (title: string, message: string, code?: string, onGuestFallback?: () => void) => {
+  const isNetworkOrPopupError = code?.includes('network') || code?.includes('popup') || code?.includes('cancelled') || code?.includes('reset');
+
+  const result = await Swal.fire({
+    icon: 'warning',
+    iconColor: '#d97706',
+    title: `<span style="color: #92400e; font-weight: 800; font-size: 1.25rem;">${title}</span>`,
     html: `
       <div style="text-align: center; margin-top: 6px;">
-        <div style="background-color: #fef2f2; border: 1.5px solid #f87171; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; text-align: left;">
-          <p style="color: #991b1b; font-weight: 600; font-size: 13px; margin: 0; line-height: 1.45;">
+        <div style="background-color: #fffbeb; border: 1.5px solid #fcd34d; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; text-align: left;">
+          <p style="color: #92400e; font-weight: 600; font-size: 13px; margin: 0; line-height: 1.45;">
             ${message}
           </p>
-          ${code ? `<p style="color: #b91c1c; font-size: 11px; margin-top: 6px; margin-bottom: 0; font-family: monospace; font-weight: 600;">Detalle: ${code}</p>` : ''}
+          <p style="color: #78350f; font-size: 11px; margin-top: 6px; margin-bottom: 0; line-height: 1.4;">
+            <b>Causa frecuente:</b> La red o cortafuegos institucional de la entidad bloquea las ventanas emergentes externas (ERR_CONNECTION_RESET).
+          </p>
+          ${code ? `<p style="color: #b45309; font-size: 10px; margin-top: 6px; margin-bottom: 0; font-family: monospace;">Detalle técnico: ${code}</p>` : ''}
         </div>
-        <p style="color: #475569; font-size: 12px; line-height: 1.4; margin: 0;">
-          Puede hacer clic en <b>Ingresar como Invitado</b> para trabajar de forma inmediata.
+        <p style="color: #334155; font-size: 12px; font-weight: 600; line-height: 1.4; margin: 0;">
+          ¿Desea ingresar en <b>Modo Local Inmediato</b>? Todas las funciones, plantillas Word FPJ-35 y matrices Excel estarán 100% operativas.
         </p>
       </div>
     `,
-    confirmButtonColor: '#dc2626',
-    confirmButtonText: 'Entendido',
+    showCancelButton: true,
+    confirmButtonColor: '#1e3a8a',
+    cancelButtonColor: '#64748b',
+    confirmButtonText: '⚡ Ingresar en Modo Local',
+    cancelButtonText: 'Cerrar',
     background: '#ffffff',
     customClass: {
-      popup: 'rounded-xl shadow-2xl border border-red-200',
-      confirmButton: 'px-5 py-2.5 rounded font-bold text-xs uppercase tracking-wider shadow-sm'
+      popup: 'rounded-2xl shadow-2xl border border-amber-200',
+      confirmButton: 'px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider shadow-md',
+      cancelButton: 'px-4 py-2.5 rounded-xl font-semibold text-xs'
     }
   });
+
+  if (result.isConfirmed && onGuestFallback) {
+    onGuestFallback();
+  }
 };
 
 const showRedErrorAlert = (title: string, message: string) => {
@@ -289,7 +302,12 @@ const App: React.FC = () => {
       showSuccessToast('Sesión iniciada con Google');
     } catch (err: any) {
       console.error("Error Google Auth:", err);
-      showRedAuthErrorAlert("No se pudo iniciar sesión con Google", "Ocurrió un inconveniente con el proveedor de autenticación de Google.", err.code);
+      showRedAuthErrorAlert(
+        "Acceso con Google Restringido", 
+        "La red o cortafuegos bloqueó la ventana emergente externa de Google.", 
+        err.code,
+        handleGuestLogin
+      );
     } finally {
       setIsLoggingIn(false);
     }
@@ -564,6 +582,171 @@ const App: React.FC = () => {
   };
 
   // ==========================================
+  // BULK CITATION GENERATION FROM EXCEL MATRIX
+  // ==========================================
+
+  const handleGenerateCitationsFromExcel = async () => {
+    const pending = excelRows.filter(r => !r.generada);
+    if (pending.length === 0) {
+      showInfoToast("No hay filas pendientes por procesar en la matriz Excel.");
+      return;
+    }
+
+    const confirm = await Swal.fire({
+      title: `<span style="color: #003366; font-weight: 800; font-size: 1.25rem;">¿Generar ${pending.length} Citaciones?</span>`,
+      html: `
+        <div style="text-align: left; font-size: 13px; color: #334155;">
+          <p style="margin-bottom: 8px;">
+            Se registrarán <b>${pending.length} citaciones</b> en el sistema y estarán disponibles en <b>Citaciones Generadas</b> para emisión de formato FPJ-35 y envío por WhatsApp o Correo.
+          </p>
+          <p style="font-size: 11.5px; color: #64748b; margin: 0;">
+            En la matriz de Excel, estas filas quedarán marcadas como <b>GENERADA: SÍ</b>.
+          </p>
+        </div>
+      `,
+      icon: 'question',
+      iconColor: '#003366',
+      showCancelButton: true,
+      confirmButtonColor: '#16a34a',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: `Sí, generar ${pending.length} citaciones`,
+      cancelButtonText: 'Cancelar',
+      reverseButtons: true
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    Swal.fire({
+      title: 'Generando Citaciones...',
+      text: `Procesando ${pending.length} registros de la matriz Excel`,
+      allowOutsideClick: false,
+      didOpen: () => {
+        Swal.showLoading();
+      }
+    });
+
+    try {
+      let createdCount = 0;
+
+      for (const r of pending) {
+        const parsedDate = parseExcelDate(r.fecha);
+        const parsedTime = parseExcelTime(r.hora);
+
+        const newCit: Partial<Citacion> = {
+          nombre: (r.nombre || 'CITADO SIN NOMBRE').trim().toUpperCase(),
+          identificacion: (r.cedula || '').trim(),
+          cedula: (r.cedula || '').trim(),
+          orden: (r.opj || r.ot || 'Sin Orden').trim(),
+          nunc: (r.nunc || '').trim(),
+          fiscal: (r.fiscal || '17 Local').trim(),
+          delito: (r.delito || '').trim(),
+          fecha: parsedDate || getTodayDateStr(),
+          hora: parsedTime || '08:00',
+          telefono: (r.telefono || '').trim(),
+          correo: (r.correo || '').trim(),
+          direccion: (r.direccion || '').trim(),
+          ciudad: config.municipio || 'Cartagena',
+          motivo: r.delito ? `Entrevista - ${r.delito}` : 'Entrevista',
+          genero: 'Femenino',
+          requiereAbogado: 'NO',
+          observaciones: DEFAULT_OBSERVACIONES,
+          estado: 'pendiente',
+          asistencia: null,
+          informe: null
+        };
+
+        await CitationService.createCitation(user, newCit, config);
+        createdCount++;
+      }
+
+      // Marcar filas procesadas como generadas en el estado local de Excel
+      const pendingIds = new Set(pending.map(p => p.id));
+      const nowTimeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const updatedRows = excelRows.map(r => {
+        if (pendingIds.has(r.id)) {
+          return {
+            ...r,
+            generada: true,
+            fechaGeneracion: nowTimeStr
+          };
+        }
+        return r;
+      });
+
+      setExcelRows(updatedRows);
+      localStorage.setItem('fgn_insumo_excel_rows', JSON.stringify(updatedRows));
+
+      Swal.close();
+
+      const viewResult = await Swal.fire({
+        icon: 'success',
+        iconColor: '#16a34a',
+        title: `<span style="color: #16a34a; font-weight: 800; font-size: 1.25rem;">¡${createdCount} Citaciones Generadas!</span>`,
+        html: `
+          <div style="font-size: 13px; color: #334155; line-height: 1.4;">
+            <p>Se crearon exitosamente <b>${createdCount} citaciones</b> listas para descargar en Word FPJ-35 y notificar.</p>
+          </div>
+        `,
+        showCancelButton: true,
+        confirmButtonColor: '#003366',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: '📋 Ver Citaciones Generadas',
+        cancelButtonText: 'Permanecer en Matriz'
+      });
+
+      if (viewResult.isConfirmed) {
+        setActiveMode('pendientes');
+      }
+    } catch (err: any) {
+      console.error("Error al procesar citaciones desde Excel:", err);
+      Swal.close();
+      showRedErrorAlert("Error al Generar Citaciones", "Ocurrió un inconveniente al registrar las citaciones.");
+    }
+  };
+
+  const handleGenerateSingleCitationFromExcel = async (r: ExcelInsumoRow) => {
+    try {
+      const parsedDate = parseExcelDate(r.fecha);
+      const parsedTime = parseExcelTime(r.hora);
+
+      const newCit: Partial<Citacion> = {
+        nombre: (r.nombre || 'CITADO SIN NOMBRE').trim().toUpperCase(),
+        identificacion: (r.cedula || '').trim(),
+        cedula: (r.cedula || '').trim(),
+        orden: (r.opj || r.ot || 'Sin Orden').trim(),
+        nunc: (r.nunc || '').trim(),
+        fiscal: (r.fiscal || '17 Local').trim(),
+        delito: (r.delito || '').trim(),
+        fecha: parsedDate || getTodayDateStr(),
+        hora: parsedTime || '08:00',
+        telefono: (r.telefono || '').trim(),
+        correo: (r.correo || '').trim(),
+        direccion: (r.direccion || '').trim(),
+        ciudad: config.municipio || 'Cartagena',
+        motivo: r.delito ? `Entrevista - ${r.delito}` : 'Entrevista',
+        genero: 'Femenino',
+        requiereAbogado: 'NO',
+        observaciones: DEFAULT_OBSERVACIONES,
+        estado: 'pendiente',
+        asistencia: null,
+        informe: null
+      };
+
+      await CitationService.createCitation(user, newCit, config);
+
+      const nowTimeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const updatedRows = excelRows.map(row => row.id === r.id ? { ...row, generada: true, fechaGeneracion: nowTimeStr } : row);
+      setExcelRows(updatedRows);
+      localStorage.setItem('fgn_insumo_excel_rows', JSON.stringify(updatedRows));
+
+      showSuccessToast(`Citación de "${r.nombre}" generada`);
+    } catch (err: any) {
+      console.error("Error generando citación individual:", err);
+      showRedErrorAlert("Error", "No se pudo generar la citación individual.");
+    }
+  };
+
+  // ==========================================
   // AI EXTRACTION (PDF / GEMINI)
   // ==========================================
 
@@ -688,24 +871,34 @@ const App: React.FC = () => {
 
             <div className="space-y-3 pt-2">
               <button
+                onClick={handleGuestLogin}
+                className="w-full py-3.5 px-4 bg-fgn-blue hover:bg-black text-white font-bold rounded-xl text-xs uppercase tracking-wider transition-all shadow-md flex items-center justify-between cursor-pointer border border-fgn-blue"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Zap size={16} className="text-fgn-gold" />
+                  <span>Ingresar en Modo Local</span>
+                </div>
+                <span className="text-[9px] bg-fgn-gold/20 text-fgn-gold px-2 py-0.5 rounded font-black tracking-normal uppercase">
+                  Recomendado
+                </span>
+              </button>
+
+              <button
                 onClick={handleGoogleLogin}
                 disabled={isLoggingIn}
-                className="w-full py-3.5 px-4 bg-fgn-blue hover:bg-black text-white font-bold rounded-xl text-xs uppercase tracking-widest transition-all shadow-md flex items-center justify-center gap-3 cursor-pointer"
+                className="w-full py-3 px-4 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs uppercase tracking-wider transition-colors flex items-center justify-center gap-2 cursor-pointer border border-slate-300"
               >
                 {isLoggingIn ? (
-                  <Loader2 size={16} className="animate-spin" />
+                  <Loader2 size={16} className="animate-spin text-fgn-blue" />
                 ) : (
-                  <User size={16} />
+                  <User size={16} className="text-slate-500" />
                 )}
                 <span>Ingresar con Cuenta Google</span>
               </button>
 
-              <button
-                onClick={handleGuestLogin}
-                className="w-full py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs uppercase tracking-wider transition-colors flex items-center justify-center gap-2 cursor-pointer border border-slate-200"
-              >
-                <span>Ingresar como Invitado (Modo Local)</span>
-              </button>
+              <p className="text-[10px] text-slate-400 text-center leading-tight pt-1">
+                El <b>Modo Local</b> opera sin depender de ventanas emergentes externas, ideal para redes corporativas o de la Fiscalía.
+              </p>
             </div>
           </div>
         </motion.div>
@@ -1807,31 +2000,9 @@ const App: React.FC = () => {
                 setExcelRows(newRows);
                 localStorage.setItem('fgn_insumo_excel_rows', JSON.stringify(newRows));
               }}
-              onGenerateCitation={(row) => {
-                const parsedDate = parseExcelDate(row.fechaDiligencia);
-                const parsedTime = parseExcelTime(row.horaDiligencia);
-
-                const newCit: Partial<Citacion> = {
-                  nombre: row.nombreCompleto || 'CITADO INSUMO',
-                  identificacion: row.cedula || '',
-                  genero: row.genero || 'Femenino',
-                  orden: row.ordenOpj || 'Sin Orden',
-                  nunc: row.nunc || '',
-                  fiscal: row.fiscal || '17 Local',
-                  delito: row.delito || '',
-                  fecha: parsedDate || getTodayDateStr(),
-                  hora: parsedTime || '08:00',
-                  telefono: row.telefono || '',
-                  correo: row.correo || '',
-                  ciudad: row.municipio || config.municipio || 'Cartagena',
-                  direccion: row.direccion || '',
-                  motivo: row.motivo || 'Entrevista',
-                  requiereAbogado: row.requiereAbogado || 'NO',
-                  observaciones: row.observaciones || DEFAULT_OBSERVACIONES
-                };
-
-                handleRegisterManualCitation(newCit);
-              }}
+              onGenerateCitations={handleGenerateCitationsFromExcel}
+              onGenerateCitation={handleGenerateSingleCitationFromExcel}
+              onBack={() => setActiveMode(null)}
             />
           </motion.div>
         )}
