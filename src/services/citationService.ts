@@ -339,6 +339,74 @@ export class CitationService {
   }
 
   /**
+   * Register multiple citations in bulk
+   */
+  static async createMultipleCitations(
+    user: any,
+    itemsData: Partial<Citacion>[],
+    config: InvestigatorConfig
+  ): Promise<Citacion[]> {
+    const createdItems: Citacion[] = itemsData.map((data, index) => {
+      const todayDate = data.fecha || getTodayDateStr();
+      const todayTime = data.hora || getCurrentTimeStr();
+      return {
+        id: `cit_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
+        nombre: data.nombre || 'CIUDADANO POR CITAR',
+        genero: data.genero || 'Femenino',
+        orden: data.orden || 'Sin Orden',
+        nunc: data.nunc || '',
+        fiscal: data.fiscal || '17 Local',
+        delito: data.delito || '',
+        unidad: data.unidad || config.grupoInvestigador || 'Unidad de Patrimonio Económico',
+        fecha: todayDate,
+        hora: todayTime,
+        telefono: data.telefono || '',
+        correo: data.correo || '',
+        identificacion: data.identificacion || data.cedula || '',
+        cedula: data.identificacion || data.cedula || '',
+        ciudad: data.ciudad || config.municipio || 'Cartagena',
+        motivo: data.motivo || 'Entrevista',
+        direccion: data.direccion || '',
+        instalaciones: data.instalaciones || config.instalaciones || 'Fiscalía General de la Nación - Sede Canapote',
+        direccionInstalaciones: data.direccionInstalaciones || config.direccionInstalaciones || 'Cra. 17 # 32-10',
+        observaciones: data.observaciones || DEFAULT_OBSERVACIONES,
+        requiereAbogado: data.requiereAbogado || 'NO',
+        fechaExpedicion: data.fechaExpedicion || todayDate,
+        horaExpedicion: data.horaExpedicion || todayTime,
+        estado: 'pendiente',
+        asistencia: null,
+        informe: null,
+        investigador_creador: config.investigador,
+        entidadInvestigador: config.entidadInvestigador,
+        grupoInvestigador: config.grupoInvestigador,
+        correoInvestigador: config.correoInvestigador,
+        telefono_creador: config.telefono,
+        oficina_creador: config.oficina,
+        departamento: config.departamento,
+        municipio: config.municipio,
+        creadoEl: new Date().toLocaleString('es-CO'),
+        creadoTimestamp: Date.now() + index
+      };
+    });
+
+    if (!user || user.isLocalGuest) {
+      const stored = localStorage.getItem('fgn_guest_historial');
+      const list: Citacion[] = stored ? JSON.parse(stored) : [];
+      const updated = [...createdItems, ...list];
+      localStorage.setItem('fgn_guest_historial', JSON.stringify(updated));
+      return createdItems;
+    }
+
+    const historialRef = collection(db, 'artifacts', appId, 'users', user.uid, 'historial');
+    const results: Citacion[] = [];
+    for (const item of createdItems) {
+      const docRef = await addDoc(historialRef, item);
+      results.push({ ...item, id: docRef.id });
+    }
+    return results;
+  }
+
+  /**
    * Update an existing citation
    */
   static async updateCitation(user: any, updatedData: Citacion): Promise<void> {

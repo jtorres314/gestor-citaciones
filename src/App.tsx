@@ -270,6 +270,8 @@ const App: React.FC = () => {
       const stored = localStorage.getItem('fgn_guest_historial');
       if (stored) {
         try { setHistorial(JSON.parse(stored)); } catch (e) { console.error(e); }
+      } else {
+        setHistorial([]);
       }
       return;
     }
@@ -315,7 +317,12 @@ const App: React.FC = () => {
 
   const handleGuestLogin = () => {
     localStorage.setItem('fgn_guest_session', 'true');
-    setUser({ uid: 'guest_user', email: 'invitado@fiscalia.gov.co', isLocalGuest: true });
+    const guestUser = { uid: 'guest_user', email: 'invitado@fiscalia.gov.co', isLocalGuest: true };
+    setUser(guestUser);
+    const stored = localStorage.getItem('fgn_guest_historial');
+    if (stored) {
+      try { setHistorial(JSON.parse(stored)); } catch (e) { console.error(e); }
+    }
     showInfoToast('Modo Invitado Local Activado');
   };
 
@@ -325,6 +332,7 @@ const App: React.FC = () => {
       await signOut(auth);
     }
     setUser(null);
+    setHistorial([]);
     setActiveMode(null);
     showInfoToast('Sesión cerrada');
   };
@@ -465,7 +473,8 @@ const App: React.FC = () => {
 
   const handleRegisterManualCitation = async (data: Partial<Citacion>) => {
     try {
-      await CitationService.createCitation(user, data, config);
+      const created = await CitationService.createCitation(user, data, config);
+      setHistorial(prev => [created, ...prev]);
       setIsManualFormOpen(false);
       showSuccessToast('Citación registrada exitosamente');
     } catch (e: any) {
@@ -477,6 +486,7 @@ const App: React.FC = () => {
   const handleSaveEditedCitation = async (updated: Citacion) => {
     try {
       await CitationService.updateCitation(user, updated);
+      setHistorial(prev => prev.map(c => c.id === updated.id ? updated : c));
       setIsEditModalOpen(false);
       setEditingCitation(null);
       if (selectedCitation?.id === updated.id) {
@@ -504,6 +514,7 @@ const App: React.FC = () => {
     if (result.isConfirmed) {
       try {
         await CitationService.deleteCitation(user, id);
+        setHistorial(prev => prev.filter(c => c.id !== id));
         setSelectedIds(prev => prev.filter(item => item !== id));
         showSuccessToast('Citación eliminada');
       } catch (e) {
@@ -516,6 +527,7 @@ const App: React.FC = () => {
   const handleMoveToCitado = async (c: Citacion) => {
     try {
       await CitationService.updateStatus(user, c.id, 'citado');
+      setHistorial(prev => prev.map(item => item.id === c.id ? { ...item, estado: 'citado' } : item));
       showSuccessToast(`"${c.nombre}" movido a Citados`);
     } catch (e) {
       console.error(e);
@@ -527,6 +539,7 @@ const App: React.FC = () => {
     if (selectedIds.length === 0) return;
     try {
       await CitationService.bulkUpdateStatus(user, selectedIds, 'citado');
+      setHistorial(prev => prev.map(item => selectedIds.includes(item.id) ? { ...item, estado: 'citado' } : item));
       showSuccessToast(`${selectedIds.length} citaciones movidas a Citados`);
       setSelectedIds([]);
     } catch (e) {
@@ -538,6 +551,7 @@ const App: React.FC = () => {
   const handleMarkAttendance = async (id: string, status: 'asistio' | 'no_asistio' | null) => {
     try {
       await CitationService.updateAttendance(user, id, status);
+      setHistorial(prev => prev.map(item => item.id === id ? { ...item, asistencia: status } : item));
       showSuccessToast(status === 'asistio' ? 'Asistencia registrada' : status === 'no_asistio' ? 'Marcado como No Asistió' : 'Estado de asistencia restablecido');
     } catch (e) {
       console.error(e);
@@ -547,6 +561,7 @@ const App: React.FC = () => {
   const handleMarkReport = async (id: string, status: 'si' | 'no' | null) => {
     try {
       await CitationService.updateReport(user, id, status);
+      setHistorial(prev => prev.map(item => item.id === id ? { ...item, informe: status } : item));
       showSuccessToast(status === 'si' ? 'Informe registrado' : status === 'no' ? 'Marcado sin informe' : 'Estado de informe restablecido');
     } catch (e) {
       console.error(e);
@@ -626,13 +641,11 @@ const App: React.FC = () => {
     });
 
     try {
-      let createdCount = 0;
-
-      for (const r of pending) {
+      const itemsToCreate: Partial<Citacion>[] = pending.map(r => {
         const parsedDate = parseExcelDate(r.fecha);
         const parsedTime = parseExcelTime(r.hora);
 
-        const newCit: Partial<Citacion> = {
+        return {
           nombre: (r.nombre || 'CITADO SIN NOMBRE').trim().toUpperCase(),
           identificacion: (r.cedula || '').trim(),
           cedula: (r.cedula || '').trim(),
@@ -654,10 +667,12 @@ const App: React.FC = () => {
           asistencia: null,
           informe: null
         };
+      });
 
-        await CitationService.createCitation(user, newCit, config);
-        createdCount++;
-      }
+      const newCreated = await CitationService.createMultipleCitations(user, itemsToCreate, config);
+
+      // Actualizar estado local inmediatamente para que aparezcan en pantalla
+      setHistorial(prev => [...newCreated, ...prev]);
 
       // Marcar filas procesadas como generadas en el estado local de Excel
       const pendingIds = new Set(pending.map(p => p.id));
@@ -676,22 +691,57 @@ const App: React.FC = () => {
       setExcelRows(updatedRows);
       localStorage.setItem('fgn_insumo_excel_rows', JSON.stringify(updatedRows));
 
+      // Restablecer filtros de pendientes para asegurar que se muestren
+      setFiltersPendientes({
+        searchTerm: '',
+        fiscal: 'todos',
+        fechaFiltro: 'todas',
+        fechaDesde: '',
+        fechaHasta: '',
+        estado: 'todos',
+        informe: 'todos',
+        asistencia: 'todas'
+      });
+      setPagePendientes(1);
+
       Swal.close();
 
+      let countdownTimerInterval: any;
       const viewResult = await Swal.fire({
         icon: 'success',
         iconColor: '#16a34a',
-        title: `<span style="color: #16a34a; font-weight: 800; font-size: 1.25rem;">¡${createdCount} Citaciones Generadas!</span>`,
+        title: `<span style="color: #16a34a; font-weight: 800; font-size: 1.25rem;">¡${newCreated.length} Citaciones Generadas!</span>`,
         html: `
           <div style="font-size: 13px; color: #334155; line-height: 1.4;">
-            <p>Se crearon exitosamente <b>${createdCount} citaciones</b> listas para descargar en Word FPJ-35 y notificar.</p>
+            <p style="margin-bottom: 8px;">Se crearon exitosamente <b>${newCreated.length} citaciones</b> listas para descargar en Word FPJ-35 y notificar.</p>
+            <p style="font-size: 12px; color: #64748b; margin-top: 10px; margin-bottom: 0;">
+              Cerrando automáticamente en <b style="color: #003366;"><span id="swal-countdown-val">4</span>s</b>...
+            </p>
           </div>
         `,
+        timer: 4000,
+        timerProgressBar: true,
         showCancelButton: true,
         confirmButtonColor: '#003366',
         cancelButtonColor: '#64748b',
         confirmButtonText: '📋 Ver Citaciones Generadas',
-        cancelButtonText: 'Permanecer en Matriz'
+        cancelButtonText: 'Permanecer en Matriz',
+        didOpen: () => {
+          const countEl = Swal.getHtmlContainer()?.querySelector('#swal-countdown-val');
+          if (countEl) {
+            countdownTimerInterval = setInterval(() => {
+              const timerLeft = Swal.getTimerLeft();
+              if (timerLeft !== undefined && timerLeft !== null) {
+                countEl.textContent = Math.ceil(timerLeft / 1000).toString();
+              }
+            }, 100);
+          }
+        },
+        willClose: () => {
+          if (countdownTimerInterval) {
+            clearInterval(countdownTimerInterval);
+          }
+        }
       });
 
       if (viewResult.isConfirmed) {
@@ -732,7 +782,8 @@ const App: React.FC = () => {
         informe: null
       };
 
-      await CitationService.createCitation(user, newCit, config);
+      const created = await CitationService.createCitation(user, newCit, config);
+      setHistorial(prev => [created, ...prev]);
 
       const nowTimeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const updatedRows = excelRows.map(row => row.id === r.id ? { ...row, generada: true, fechaGeneracion: nowTimeStr } : row);
