@@ -631,15 +631,6 @@ const App: React.FC = () => {
 
     if (!confirm.isConfirmed) return;
 
-    Swal.fire({
-      title: 'Generando Citaciones...',
-      text: `Procesando ${pending.length} registros de la matriz Excel`,
-      allowOutsideClick: false,
-      didOpen: () => {
-        Swal.showLoading();
-      }
-    });
-
     try {
       const itemsToCreate: Partial<Citacion>[] = pending.map(r => {
         const parsedDate = parseExcelDate(r.fecha);
@@ -704,44 +695,22 @@ const App: React.FC = () => {
       });
       setPagePendientes(1);
 
-      Swal.close();
-
-      let countdownTimerInterval: any;
       const viewResult = await Swal.fire({
         icon: 'success',
         iconColor: '#16a34a',
         title: `<span style="color: #16a34a; font-weight: 800; font-size: 1.25rem;">¡${newCreated.length} Citaciones Generadas!</span>`,
         html: `
-          <div style="font-size: 13px; color: #334155; line-height: 1.4;">
-            <p style="margin-bottom: 8px;">Se crearon exitosamente <b>${newCreated.length} citaciones</b> listas para descargar en Word FPJ-35 y notificar.</p>
-            <p style="font-size: 12px; color: #64748b; margin-top: 10px; margin-bottom: 0;">
-              Cerrando automáticamente en <b style="color: #003366;"><span id="swal-countdown-val">4</span>s</b>...
-            </p>
+          <div style="font-size: 13.5px; color: #334155; line-height: 1.5; padding: 4px 0;">
+            <p style="margin: 0;">Se crearon exitosamente <b>${newCreated.length} citaciones</b> en el sistema listas para formato Word FPJ-35 y notificación.</p>
           </div>
         `,
-        timer: 4000,
+        timer: 3500,
         timerProgressBar: true,
         showCancelButton: true,
         confirmButtonColor: '#003366',
         cancelButtonColor: '#64748b',
         confirmButtonText: '📋 Ver Citaciones Generadas',
-        cancelButtonText: 'Permanecer en Matriz',
-        didOpen: () => {
-          const countEl = Swal.getHtmlContainer()?.querySelector('#swal-countdown-val');
-          if (countEl) {
-            countdownTimerInterval = setInterval(() => {
-              const timerLeft = Swal.getTimerLeft();
-              if (timerLeft !== undefined && timerLeft !== null) {
-                countEl.textContent = Math.ceil(timerLeft / 1000).toString();
-              }
-            }, 100);
-          }
-        },
-        willClose: () => {
-          if (countdownTimerInterval) {
-            clearInterval(countdownTimerInterval);
-          }
-        }
+        cancelButtonText: 'Permanecer en Matriz'
       });
 
       if (viewResult.isConfirmed) {
@@ -749,7 +718,6 @@ const App: React.FC = () => {
       }
     } catch (err: any) {
       console.error("Error al procesar citaciones desde Excel:", err);
-      Swal.close();
       showRedErrorAlert("Error al Generar Citaciones", "Ocurrió un inconveniente al registrar las citaciones.");
     }
   };
