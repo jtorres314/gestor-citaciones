@@ -548,6 +548,45 @@ const App: React.FC = () => {
     }
   };
 
+  const handleBulkDeleteCitations = async () => {
+    if (selectedIds.length === 0) return;
+
+    const count = selectedIds.length;
+    const confirm = await Swal.fire({
+      title: `<span style="color: #dc2626; font-weight: 800; font-size: 1.2rem;">¿Eliminar ${count} Citaciones en Bloque?</span>`,
+      html: `
+        <div style="text-align: left; font-size: 13px; color: #334155; line-height: 1.5;">
+          <p style="margin-bottom: 8px;">
+            Está a punto de eliminar <b>${count} citaciones seleccionadas</b> del sistema.
+          </p>
+          <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px; color: #991b1b; font-size: 12px; font-weight: 600;">
+            ⚠️ Esta acción es permanente y no se puede deshacer. Los registros se borrarán por completo.
+          </div>
+        </div>
+      `,
+      icon: 'warning',
+      iconColor: '#dc2626',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: `Sí, eliminar ${count} citaciones`,
+      cancelButtonText: 'Cancelar',
+      reverseButtons: true
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+      await CitationService.bulkDeleteCitations(user, selectedIds);
+      setHistorial(prev => prev.filter(c => !selectedIds.includes(c.id)));
+      setSelectedIds([]);
+      showSuccessToast(`${count} citaciones eliminadas exitosamente`);
+    } catch (e) {
+      console.error(e);
+      showRedErrorAlert("Error al eliminar", "No se pudieron eliminar las citaciones seleccionadas.");
+    }
+  };
+
   const handleMarkAttendance = async (id: string, status: 'asistio' | 'no_asistio' | null) => {
     try {
       await CitationService.updateAttendance(user, id, status);
@@ -1621,7 +1660,7 @@ const App: React.FC = () => {
             className="space-y-6"
           >
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={() => {
                     setActiveMode(null);
@@ -1633,14 +1672,34 @@ const App: React.FC = () => {
                 </button>
 
                 {selectedIds.length > 0 && (
-                  <motion.button
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    onClick={handleBulkMoveToCitado}
-                    className="flex items-center gap-2 bg-blue-600 text-white font-bold uppercase text-[10px] tracking-widest px-4 py-2 rounded-lg shadow-md hover:bg-blue-700 transition-all cursor-pointer"
-                  >
-                    <CheckCircle size={14} /> Mover Seleccionados ({selectedIds.length})
-                  </motion.button>
+                  <>
+                    <motion.button
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      onClick={handleBulkMoveToCitado}
+                      className="flex items-center gap-1.5 bg-blue-600 text-white font-bold uppercase text-[10px] tracking-widest px-3.5 py-2 rounded-lg shadow-md hover:bg-blue-700 transition-all cursor-pointer"
+                      title="Mover citaciones seleccionadas al listado de Citados"
+                    >
+                      <CheckCircle size={14} /> Mover Seleccionados ({selectedIds.length})
+                    </motion.button>
+
+                    <motion.button
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      onClick={handleBulkDeleteCitations}
+                      className="flex items-center gap-1.5 bg-red-600 text-white font-bold uppercase text-[10px] tracking-widest px-3.5 py-2 rounded-lg shadow-md hover:bg-red-700 transition-all cursor-pointer"
+                      title="Eliminar permanentemente las citaciones seleccionadas en bloque"
+                    >
+                      <Trash2 size={14} /> Eliminar en Bloque ({selectedIds.length})
+                    </motion.button>
+
+                    <button
+                      onClick={() => setSelectedIds([])}
+                      className="text-[10px] font-bold text-slate-500 hover:text-slate-700 uppercase px-2.5 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer"
+                    >
+                      Deseleccionar
+                    </button>
+                  </>
                 )}
               </div>
 
@@ -1782,12 +1841,38 @@ const App: React.FC = () => {
             className="space-y-6"
           >
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <button
-                onClick={() => setActiveMode(null)}
-                className="flex items-center gap-2 text-text-muted hover:text-fgn-blue font-bold uppercase text-[10px] tracking-widest bg-white px-4 py-2 rounded-lg border border-fgn-border shadow-sm transition-all cursor-pointer w-fit"
-              >
-                <ArrowLeft size={14} /> Volver al Inicio
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => {
+                    setActiveMode(null);
+                    setSelectedIds([]);
+                  }}
+                  className="flex items-center gap-2 text-text-muted hover:text-fgn-blue font-bold uppercase text-[10px] tracking-widest bg-white px-4 py-2 rounded-lg border border-fgn-border shadow-sm transition-all cursor-pointer w-fit"
+                >
+                  <ArrowLeft size={14} /> Volver al Inicio
+                </button>
+
+                {selectedIds.length > 0 && (
+                  <>
+                    <motion.button
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      onClick={handleBulkDeleteCitations}
+                      className="flex items-center gap-1.5 bg-red-600 text-white font-bold uppercase text-[10px] tracking-widest px-3.5 py-2 rounded-lg shadow-md hover:bg-red-700 transition-all cursor-pointer"
+                      title="Eliminar permanentemente los citados seleccionados en bloque"
+                    >
+                      <Trash2 size={14} /> Eliminar en Bloque ({selectedIds.length})
+                    </motion.button>
+
+                    <button
+                      onClick={() => setSelectedIds([])}
+                      className="text-[10px] font-bold text-slate-500 hover:text-slate-700 uppercase px-2.5 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer"
+                    >
+                      Deseleccionar
+                    </button>
+                  </>
+                )}
+              </div>
 
               <h2 className="text-xl font-bold text-green-600 uppercase tracking-tight flex items-center gap-3">
                 <Check size={24} /> Listado de Citados (Enviados)
@@ -1815,6 +1900,20 @@ const App: React.FC = () => {
               <div className="overflow-x-auto">
                 {/* DESKTOP HEADER */}
                 <div className="hidden md:grid bg-bg-gray px-6 py-3 border-b border-fgn-border grid-cols-12 gap-3 text-[9px] font-bold text-text-muted uppercase tracking-widest min-w-[960px]">
+                  <div className="col-span-1 flex items-center justify-center">
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 rounded border-fgn-border text-fgn-blue focus:ring-fgn-blue cursor-pointer"
+                      checked={paginatedCitados.length > 0 && paginatedCitados.every(p => selectedIds.includes(p.id))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedIds(prev => Array.from(new Set([...prev, ...paginatedCitados.map(p => p.id)])));
+                        } else {
+                          setSelectedIds(prev => prev.filter(id => !paginatedCitados.some(p => p.id === id)));
+                        }
+                      }}
+                    />
+                  </div>
                   <div className="col-span-3">PARTICIPANTE</div>
                   <div className="col-span-1">ORDEN OPJ</div>
                   <div 
@@ -1829,15 +1928,29 @@ const App: React.FC = () => {
                     </span>
                   </div>
                   <div className="col-span-1 text-center">INFORME</div>
-                  <div className="col-span-2 text-center">ASISTENCIA</div>
+                  <div className="col-span-1 text-center">ASISTENCIA</div>
                   <div className="col-span-3 text-right">ACCIONES</div>
                 </div>
 
                 {/* MOBILE CONTROLS BAR */}
                 <div className="flex md:hidden bg-slate-100/90 px-3.5 py-2.5 border-b border-fgn-border items-center justify-between text-[11px] font-bold text-slate-700">
-                  <span className="text-[10px] uppercase tracking-wider text-slate-600 font-bold">
-                    Mostrando {filteredCitados.length} citados
-                  </span>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 rounded border-fgn-border text-fgn-blue focus:ring-fgn-blue cursor-pointer"
+                      checked={paginatedCitados.length > 0 && paginatedCitados.every(p => selectedIds.includes(p.id))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedIds(prev => Array.from(new Set([...prev, ...paginatedCitados.map(p => p.id)])));
+                        } else {
+                          setSelectedIds(prev => prev.filter(id => !paginatedCitados.some(p => p.id === id)));
+                        }
+                      }}
+                    />
+                    <span className="text-[10px] uppercase tracking-wider text-slate-600 font-bold">
+                      Seleccionar todo ({filteredCitados.length})
+                    </span>
+                  </label>
                   <button 
                     onClick={toggleSort}
                     className="flex items-center gap-1 text-[10px] uppercase font-bold text-fgn-blue hover:text-blue-900 bg-white px-2.5 py-1 rounded border border-slate-200 shadow-2xs cursor-pointer"
@@ -1859,6 +1972,10 @@ const App: React.FC = () => {
                     citations={paginatedCitados}
                     mode="citados"
                     config={config}
+                    selectedIds={selectedIds}
+                    onToggleSelect={(id) => {
+                      setSelectedIds(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
+                    }}
                     onView={(c) => {
                       setSelectedCitation(c);
                       setIsCitationModalOpen(true);
@@ -1899,12 +2016,38 @@ const App: React.FC = () => {
             className="space-y-6"
           >
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <button
-                onClick={() => setActiveMode(null)}
-                className="flex items-center gap-2 text-text-muted hover:text-fgn-blue font-bold uppercase text-[10px] tracking-widest bg-white px-4 py-2 rounded-lg border border-fgn-border shadow-sm transition-all cursor-pointer w-fit"
-              >
-                <ArrowLeft size={14} /> Volver al Inicio
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => {
+                    setActiveMode(null);
+                    setSelectedIds([]);
+                  }}
+                  className="flex items-center gap-2 text-text-muted hover:text-fgn-blue font-bold uppercase text-[10px] tracking-widest bg-white px-4 py-2 rounded-lg border border-fgn-border shadow-sm transition-all cursor-pointer w-fit"
+                >
+                  <ArrowLeft size={14} /> Volver al Inicio
+                </button>
+
+                {selectedIds.length > 0 && (
+                  <>
+                    <motion.button
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      onClick={handleBulkDeleteCitations}
+                      className="flex items-center gap-1.5 bg-red-600 text-white font-bold uppercase text-[10px] tracking-widest px-3.5 py-2 rounded-lg shadow-md hover:bg-red-700 transition-all cursor-pointer"
+                      title="Eliminar permanentemente los registros seleccionados del archivo en bloque"
+                    >
+                      <Trash2 size={14} /> Eliminar en Bloque ({selectedIds.length})
+                    </motion.button>
+
+                    <button
+                      onClick={() => setSelectedIds([])}
+                      className="text-[10px] font-bold text-slate-500 hover:text-slate-700 uppercase px-2.5 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer"
+                    >
+                      Deseleccionar
+                    </button>
+                  </>
+                )}
+              </div>
 
               <h2 className="text-xl font-bold text-fgn-blue uppercase tracking-tight flex items-center gap-3">
                 <History size={24} /> Archivo Histórico Consolidado
@@ -1932,6 +2075,20 @@ const App: React.FC = () => {
               <div className="overflow-x-auto">
                 {/* DESKTOP HEADER */}
                 <div className="hidden md:grid bg-bg-gray px-6 py-3 border-b border-fgn-border grid-cols-12 gap-3 text-[9px] font-bold text-text-muted uppercase tracking-widest min-w-[960px]">
+                  <div className="col-span-1 flex items-center justify-center">
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 rounded border-fgn-border text-fgn-blue focus:ring-fgn-blue cursor-pointer"
+                      checked={paginatedHistorial.length > 0 && paginatedHistorial.every(p => selectedIds.includes(p.id))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedIds(prev => Array.from(new Set([...prev, ...paginatedHistorial.map(p => p.id)])));
+                        } else {
+                          setSelectedIds(prev => prev.filter(id => !paginatedHistorial.some(p => p.id === id)));
+                        }
+                      }}
+                    />
+                  </div>
                   <div className="col-span-3">PARTICIPANTE</div>
                   <div className="col-span-1">ORDEN OPJ</div>
                   <div 
@@ -1946,8 +2103,36 @@ const App: React.FC = () => {
                     </span>
                   </div>
                   <div className="col-span-1 text-center">INFORME</div>
-                  <div className="col-span-2 text-center">ASISTENCIA</div>
+                  <div className="col-span-1 text-center">ASISTENCIA</div>
                   <div className="col-span-3 text-right">ACCIONES</div>
+                </div>
+
+                {/* MOBILE CONTROLS BAR */}
+                <div className="flex md:hidden bg-slate-100/90 px-3.5 py-2.5 border-b border-fgn-border items-center justify-between text-[11px] font-bold text-slate-700">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 rounded border-fgn-border text-fgn-blue focus:ring-fgn-blue cursor-pointer"
+                      checked={paginatedHistorial.length > 0 && paginatedHistorial.every(p => selectedIds.includes(p.id))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedIds(prev => Array.from(new Set([...prev, ...paginatedHistorial.map(p => p.id)])));
+                        } else {
+                          setSelectedIds(prev => prev.filter(id => !paginatedHistorial.some(p => p.id === id)));
+                        }
+                      }}
+                    />
+                    <span className="text-[10px] uppercase tracking-wider text-slate-600 font-bold">
+                      Seleccionar todo ({filteredHistorial.length})
+                    </span>
+                  </label>
+                  <button 
+                    onClick={toggleSort}
+                    className="flex items-center gap-1 text-[10px] uppercase font-bold text-fgn-blue hover:text-blue-900 bg-white px-2.5 py-1 rounded border border-slate-200 shadow-2xs cursor-pointer"
+                  >
+                    <span>Fecha</span>
+                    <ArrowUpDown size={11} className={sortConfig.direction === 'asc' ? 'text-fgn-blue' : 'text-slate-400'} />
+                  </button>
                 </div>
 
                 {paginatedHistorial.length === 0 ? (
@@ -1960,8 +2145,12 @@ const App: React.FC = () => {
                 ) : (
                   <CitationTable
                     citations={paginatedHistorial}
-                    mode="citados"
+                    mode="historial"
                     config={config}
+                    selectedIds={selectedIds}
+                    onToggleSelect={(id) => {
+                      setSelectedIds(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
+                    }}
                     onView={(c) => {
                       setSelectedCitation(c);
                       setIsCitationModalOpen(true);

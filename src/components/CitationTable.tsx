@@ -79,7 +79,7 @@ export const CitationTable: React.FC<CitationTableProps> = ({
           <div key={p.id} className="group hover:bg-slate-50/70 transition-colors">
             {/* DESKTOP & TABLET TABLE ROW */}
             <div className="hidden md:grid px-6 py-3.5 grid-cols-12 gap-3 items-center min-w-[960px]">
-              {mode === 'pendientes' && onToggleSelect && (
+              {onToggleSelect && (
                 <div className="col-span-1 flex items-center justify-center">
                   <input 
                     type="checkbox" 
@@ -91,7 +91,7 @@ export const CitationTable: React.FC<CitationTableProps> = ({
               )}
 
               {/* PARTICIPANTE */}
-              <div className={mode === 'pendientes' ? 'col-span-3' : 'col-span-3'}>
+              <div className="col-span-3">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <p className="text-xs font-bold text-fgn-blue uppercase">
                     {p.nombre}{p.identificacion && p.identificacion.trim() ? ` con CC ${p.identificacion.trim()}` : ''}
@@ -142,15 +142,15 @@ export const CitationTable: React.FC<CitationTableProps> = ({
               </div>
 
               {/* FECHA Y HORA */}
-              <div className={mode === 'citados' ? 'col-span-2' : 'col-span-3'}>
+              <div className={mode === 'pendientes' ? 'col-span-3' : 'col-span-2'}>
                 <div className="font-mono text-[11px] text-fgn-blue flex flex-col">
                   <span>{p.fecha ? formatDateES(p.fecha).toUpperCase() : '---'}</span>
                   {p.hora && <span className="text-[10px] text-fgn-gold font-bold">{formatTimeAMPM(p.hora)}</span>}
                 </div>
               </div>
 
-              {/* CITADOS MODE: INFORME Y ASISTENCIA COLUMNS */}
-              {mode === 'citados' && onMarkReport && onMarkAttendance && (
+              {/* CITADOS & HISTORIAL MODE: INFORME Y ASISTENCIA COLUMNS */}
+              {mode !== 'pendientes' && onMarkReport && onMarkAttendance && (
                 <>
                   <div className="col-span-1 flex items-center justify-center gap-1.5">
                     <button 
@@ -169,7 +169,7 @@ export const CitationTable: React.FC<CitationTableProps> = ({
                     </button>
                   </div>
 
-                  <div className="col-span-2 flex items-center justify-center gap-1.5">
+                  <div className="col-span-1 flex items-center justify-center gap-1.5">
                     <button 
                       onClick={() => onMarkAttendance(p.id, p.asistencia === 'asistio' ? null : 'asistio')}
                       className={`p-1.5 rounded transition-all border shrink-0 ${p.asistencia === 'asistio' ? 'bg-green-600 text-white border-green-600 shadow-xs' : 'bg-white text-slate-300 border-slate-200 hover:text-green-500 hover:border-green-500 cursor-pointer'}`}
@@ -189,7 +189,7 @@ export const CitationTable: React.FC<CitationTableProps> = ({
               )}
 
               {/* ACTIONS COLUMN */}
-              <div className={`${mode === 'citados' ? 'col-span-3' : 'col-span-4'} flex items-center justify-end gap-1 flex-nowrap`}>
+              <div className={`${mode === 'pendientes' ? 'col-span-4' : 'col-span-3'} flex items-center justify-end gap-1 flex-nowrap`}>
                 <button 
                   onClick={() => onView(p)}
                   className="p-1.5 text-pink-600 hover:bg-pink-50 rounded transition-all cursor-pointer shrink-0"
@@ -257,7 +257,7 @@ export const CitationTable: React.FC<CitationTableProps> = ({
             <div className="block md:hidden p-3.5 space-y-2.5">
               <div className="flex items-start justify-between gap-2.5">
                 <div className="flex items-start gap-2.5 flex-1 min-w-0">
-                  {mode === 'pendientes' && onToggleSelect && (
+                  {onToggleSelect && (
                     <label className="p-1 -m-1 cursor-pointer flex items-center justify-center">
                       <input 
                         type="checkbox" 

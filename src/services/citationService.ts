@@ -451,6 +451,27 @@ export class CitationService {
   }
 
   /**
+   * Bulk delete citations
+   */
+  static async bulkDeleteCitations(user: any, ids: string[]): Promise<void> {
+    if (!user || ids.length === 0) return;
+
+    if (user.isLocalGuest) {
+      const stored = localStorage.getItem('fgn_guest_historial');
+      const list: Citacion[] = stored ? JSON.parse(stored) : [];
+      const updated = list.filter(item => !ids.includes(item.id));
+      localStorage.setItem('fgn_guest_historial', JSON.stringify(updated));
+      return;
+    }
+
+    const promises = ids.map(id => {
+      const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'historial', id);
+      return deleteDoc(docRef);
+    });
+    await Promise.all(promises);
+  }
+
+  /**
    * Update citation status (e.g. 'pendiente' | 'citado')
    */
   static async updateStatus(user: any, id: string, estado: 'pendiente' | 'citado'): Promise<void> {
