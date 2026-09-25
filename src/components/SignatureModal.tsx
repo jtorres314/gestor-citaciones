@@ -37,6 +37,60 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
 
   if (!isOpen) return null;
 
+  const trimCanvasWhitespace = (srcCanvas: HTMLCanvasElement): HTMLCanvasElement => {
+    const ctx = srcCanvas.getContext('2d');
+    if (!ctx) return srcCanvas;
+    const { width, height } = srcCanvas;
+    const imgData = ctx.getImageData(0, 0, width, height);
+    const data = imgData.data;
+
+    let minX = width;
+    let minY = height;
+    let maxX = 0;
+    let maxY = 0;
+    let hasContent = false;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = (y * width + x) * 4;
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+        const a = data[idx + 3];
+
+        // Is pixel not transparent and not pure white
+        if (a > 30 && (r < 235 || g < 235 || b < 235)) {
+          hasContent = true;
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+
+    if (!hasContent || maxX <= minX || maxY <= minY) return srcCanvas;
+
+    const padding = 6;
+    minX = Math.max(0, minX - padding);
+    minY = Math.max(0, minY - padding);
+    maxX = Math.min(width, maxX + padding);
+    maxY = Math.min(height, maxY + padding);
+
+    const trimmedW = maxX - minX;
+    const trimmedH = maxY - minY;
+
+    const trimmedCanvas = document.createElement('canvas');
+    trimmedCanvas.width = trimmedW;
+    trimmedCanvas.height = trimmedH;
+    const trimmedCtx = trimmedCanvas.getContext('2d');
+    if (trimmedCtx) {
+      trimmedCtx.drawImage(srcCanvas, minX, minY, trimmedW, trimmedH, 0, 0, trimmedW, trimmedH);
+      return trimmedCanvas;
+    }
+    return srcCanvas;
+  };
+
   const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -45,16 +99,25 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 400;
-        const scaleSize = MAX_WIDTH / img.width;
-        canvas.width = MAX_WIDTH;
-        canvas.height = img.height * scaleSize;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          const compressedDataUrl = canvas.toDataURL('image/png', 0.8);
-          setFormData(prev => ({ ...prev, firmaImg: compressedDataUrl }));
+        const rawCanvas = document.createElement('canvas');
+        rawCanvas.width = img.width;
+        rawCanvas.height = img.height;
+        const rawCtx = rawCanvas.getContext('2d');
+        if (rawCtx) {
+          rawCtx.drawImage(img, 0, 0);
+          const trimmed = trimCanvasWhitespace(rawCanvas);
+
+          const finalCanvas = document.createElement('canvas');
+          const MAX_WIDTH = 400;
+          const scale = Math.min(MAX_WIDTH / trimmed.width, 1);
+          finalCanvas.width = Math.round(trimmed.width * scale);
+          finalCanvas.height = Math.round(trimmed.height * scale);
+          const finalCtx = finalCanvas.getContext('2d');
+          if (finalCtx) {
+            finalCtx.drawImage(trimmed, 0, 0, finalCanvas.width, finalCanvas.height);
+            const compressedDataUrl = finalCanvas.toDataURL('image/png', 0.9);
+            setFormData(prev => ({ ...prev, firmaImg: compressedDataUrl }));
+          }
         }
       };
       img.src = event.target?.result as string;

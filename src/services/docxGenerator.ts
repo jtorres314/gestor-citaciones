@@ -12,6 +12,9 @@ export const buildDocxDataFromCitation = (
   item: Partial<Citacion>, 
   config: InvestigatorConfig
 ): CitationData => {
+  const rawMotivo = (item.motivo || "Entrevista").trim();
+  const cleanMotivo = rawMotivo.includes(' - ') ? rawMotivo.split(' - ')[0].trim() : rawMotivo;
+
   return {
     id: item.id,
     nunc: item.nunc || item.orden || '',
@@ -34,7 +37,7 @@ export const buildDocxDataFromCitation = (
     hora: item.hora || "",
     instalaciones: config.instalaciones || item.instalaciones || item.oficina_creador || config.oficina || "Fiscalía General de la Nación",
     direccionInstalaciones: config.direccionInstalaciones || item.direccionInstalaciones || "Sede Canapote",
-    motivo: item.motivo || "Entrevista",
+    motivo: cleanMotivo || "Entrevista",
     requiereAbogado: item.requiereAbogado || "NO",
     observaciones: item.observaciones || DEFAULT_OBSERVACIONES,
 

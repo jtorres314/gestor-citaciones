@@ -117,6 +117,15 @@ function formatTime12H(timeStr?: string): string {
   }
 }
 
+export function cleanDiligenciaMotivo(motivo?: string): string {
+  if (!motivo) return 'Entrevista';
+  const trimmed = motivo.trim();
+  if (trimmed.includes(' - ')) {
+    return trimmed.split(' - ')[0].trim() || 'Entrevista';
+  }
+  return trimmed;
+}
+
 export function parseSignatureImage(raw?: string): { bytes: Uint8Array; extension: 'png' | 'jpeg'; mimeType: string } | null {
   if (!raw || typeof raw !== 'string') return null;
   const trimmed = raw.trim();
@@ -151,6 +160,58 @@ export function parseSignatureImage(raw?: string): { bytes: Uint8Array; extensio
     console.error("Error al procesar la imagen de la firma:", e);
     return null;
   }
+}
+
+export function getImageDimensions(bytes: Uint8Array, mimeType: string): { width: number; height: number } {
+  try {
+    if (mimeType.includes('png') && bytes.length >= 24) {
+      if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
+        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        const width = view.getUint32(16, false);
+        const height = view.getUint32(20, false);
+        if (width > 0 && height > 0) return { width, height };
+      }
+    }
+    if (mimeType.includes('jpeg') || mimeType.includes('jpg')) {
+      let offset = 2;
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      while (offset < bytes.length - 8) {
+        if (bytes[offset] !== 0xFF) break;
+        const marker = bytes[offset + 1];
+        if (marker === 0xC0 || marker === 0xC2) {
+          const height = view.getUint16(offset + 5, false);
+          const width = view.getUint16(offset + 7, false);
+          if (width > 0 && height > 0) return { width, height };
+          break;
+        }
+        const length = view.getUint16(offset + 2, false);
+        offset += 2 + length;
+      }
+    }
+  } catch (e) {
+    console.warn("Could not parse image dimensions, using fallback:", e);
+  }
+  return { width: 400, height: 120 };
+}
+
+export function calculateConstrainedDimensions(
+  naturalWidth: number,
+  naturalHeight: number,
+  maxWidthPx = 125,
+  maxHeightPx = 36
+): { widthPx: number; heightPx: number; cxEmu: number; cyEmu: number } {
+  const w = naturalWidth > 0 ? naturalWidth : 400;
+  const h = naturalHeight > 0 ? naturalHeight : 120;
+  
+  const scale = Math.min(maxWidthPx / w, maxHeightPx / h, 1);
+  const widthPx = Math.max(20, Math.round(w * scale));
+  const heightPx = Math.max(10, Math.round(h * scale));
+  
+  // 1 px = 9525 EMUs
+  const cxEmu = widthPx * 9525;
+  const cyEmu = heightPx * 9525;
+  
+  return { widthPx, heightPx, cxEmu, cyEmu };
 }
 
 function cleanWordXmlTags(xml: string): string {
@@ -408,7 +469,7 @@ export async function generateFPJ35WordDocument(citation: CitationData): Promise
                           new TextRun({ text: ",\nubicadas en la ", size: 18, font: "Calibri" }),
                           new TextRun({ text: `${citation.direccionInstalaciones || 'Sede Fiscalía - Canapote / Crespo'}`, bold: true, underline: {}, size: 18, font: "Calibri" }),
                           new TextRun({ text: " para ", size: 18, font: "Calibri" }),
-                          new TextRun({ text: `${citation.motivo || 'rendir entrevista dentro de las diligencias investigativas relacionadas en el proceso'}`, bold: true, underline: {}, size: 18, font: "Calibri" }),
+                          new TextRun({ text: `${cleanDiligenciaMotivo(citation.motivo)}`, bold: true, underline: {}, size: 18, font: "Calibri" }),
                           new TextRun({ text: ",\ndentro del proceso de la referencia.", size: 18, font: "Calibri" }),
                           ...(citation.delito && citation.delito.trim() ? [
                             new TextRun({ text: " (", size: 18, font: "Calibri" }),
@@ -554,22 +615,26 @@ export async function generateFPJ35WordDocument(citation: CitationData): Promise
                       (() => {
                         const sigInfo = parseSignatureImage(citation.firmaInvestigador);
                         if (sigInfo) {
+                          const { width: natW, height: natH } = getImageDimensions(sigInfo.bytes, sigInfo.mimeType);
+                          const dims = calculateConstrainedDimensions(natW, natH, 120, 35);
                           return new Paragraph({
                             alignment: AlignmentType.CENTER,
+                            spacing: { before: 0, after: 0 },
                             children: [
                               new ImageRun({
                                 data: sigInfo.bytes,
                                 type: sigInfo.extension === 'jpeg' ? 'jpg' : 'png',
                                 transformation: {
-                                  width: 140,
-                                  height: 55,
+                                  width: dims.widthPx,
+                                  height: dims.heightPx,
                                 },
                               }),
-                              new TextRun({ text: "\nFirma Funcionario Responsable", size: 14, font: "Calibri" })
+                              new TextRun({ text: "\nFirma Funcionario Responsable", size: 13, font: "Calibri" })
                             ]
                           });
                         }
                         return new Paragraph({ 
+                          spacing: { before: 40, after: 40 },
                           children: [new TextRun({ text: "Firma:\n\n\n__________________________________", bold: true, size: 16, font: "Calibri" })] 
                         });
                       })()
@@ -952,7 +1017,7 @@ export async function generateCitationFromTemplate(
     const horaComparecenciaTexto = formatTime12H(citation.hora);
     const instalacionesTexto = citation.instalaciones || 'las instalaciones de la Fiscalía General de la Nación';
     const direccionInstalacionesTexto = citation.direccionInstalaciones?.trim();
-    const motivoTexto = citation.motivo?.trim() || 'diligencia judicial de entrevista';
+    const motivoTexto = cleanDiligenciaMotivo(citation.motivo);
     const delitoTexto = citation.delito?.trim();
 
     // Generar el párrafo unificado oficial que engloba fecha, hora, lugar, dirección, motivo y delito
@@ -1094,7 +1159,9 @@ export async function generateCitationFromTemplate(
 
     // Si hay firma, reemplazar el marcador de posición por el elemento Drawing XML de OpenXML
     if (sigInfo) {
-      const drawingXml = `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="1371600" cy="548640"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="9999" name="Firma Investigador"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="firma.${sigInfo.extension}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdSig" cstate="print"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1371600" cy="548640"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+      const { width: natW, height: natH } = getImageDimensions(sigInfo.bytes, sigInfo.mimeType);
+      const dims = calculateConstrainedDimensions(natW, natH, 120, 35);
+      const drawingXml = `<w:r><w:rPr><w:noProof/></w:rPr><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${dims.cxEmu}" cy="${dims.cyEmu}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="9999" name="Firma Investigador"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="firma.${sigInfo.extension}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdSig" cstate="print"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${dims.cxEmu}" cy="${dims.cyEmu}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
 
       renderedXml = replacePlaceholderWithRuns(renderedXml, signaturePlaceholder, drawingXml);
     }

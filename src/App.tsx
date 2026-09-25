@@ -689,7 +689,7 @@ const App: React.FC = () => {
           correo: (r.correo || '').trim(),
           direccion: (r.direccion || '').trim(),
           ciudad: config.municipio || 'Cartagena',
-          motivo: r.delito ? `Entrevista - ${r.delito}` : 'Entrevista',
+          motivo: 'Entrevista',
           genero: 'Femenino',
           requiereAbogado: 'NO',
           observaciones: DEFAULT_OBSERVACIONES,
@@ -780,7 +780,7 @@ const App: React.FC = () => {
         correo: (r.correo || '').trim(),
         direccion: (r.direccion || '').trim(),
         ciudad: config.municipio || 'Cartagena',
-        motivo: r.delito ? `Entrevista - ${r.delito}` : 'Entrevista',
+        motivo: 'Entrevista',
         genero: 'Femenino',
         requiereAbogado: 'NO',
         observaciones: DEFAULT_OBSERVACIONES,
@@ -886,11 +886,44 @@ const App: React.FC = () => {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white space-y-4">
-        <Loader2 size={40} className="animate-spin text-fgn-gold" />
-        <p className="font-bold text-xs uppercase tracking-widest text-slate-300">
-          Iniciando Sistema Integrado de Citaciones Judiciales...
-        </p>
+      <div className="min-h-dvh min-h-screen w-full bg-gradient-to-b from-[#001f3f] via-[#002b55] to-slate-950 flex flex-col items-center justify-center p-4 sm:p-6 text-white text-center select-none">
+        <div className="w-full max-w-xs sm:max-w-sm flex flex-col items-center space-y-6">
+          {/* Institutional Shield Badge */}
+          <div className="relative">
+            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-white/10 border-2 border-fgn-gold/40 shadow-2xl flex items-center justify-center backdrop-blur-md">
+              <Building2 size={38} className="text-fgn-gold animate-pulse" />
+            </div>
+            {/* Spinning accent ring */}
+            <div className="absolute -inset-1.5 rounded-[20px] border border-fgn-gold/25 animate-spin" style={{ animationDuration: '8s' }} />
+          </div>
+
+          {/* Institutional Heading */}
+          <div className="space-y-1.5 px-2">
+            <span className="inline-block text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-fgn-gold bg-white/10 px-3 py-1 rounded-full border border-fgn-gold/30">
+              Policía Judicial • SICIJ
+            </span>
+            <h1 className="text-sm sm:text-base font-black tracking-tight uppercase text-white pt-1 leading-snug">
+              Fiscalía General de la Nación
+            </h1>
+            <p className="text-[11px] text-blue-200/90 font-medium">
+              República de Colombia
+            </p>
+          </div>
+
+          {/* Loading indicator and message */}
+          <div className="w-full space-y-3 pt-2">
+            <div className="flex items-center justify-center gap-2.5">
+              <Loader2 size={18} className="animate-spin text-fgn-gold shrink-0" />
+              <p className="font-bold text-xs uppercase tracking-wider text-slate-200 text-center">
+                Iniciando Sistema Integrado...
+              </p>
+            </div>
+            {/* Progress bar pulse */}
+            <div className="w-36 sm:w-44 h-1.5 bg-white/10 rounded-full mx-auto overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-fgn-gold via-amber-300 to-fgn-gold rounded-full w-2/3 animate-pulse" />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -898,45 +931,45 @@ const App: React.FC = () => {
   // LOGIN SCREEN
   if (!user) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+      <div className="min-h-dvh min-h-screen bg-gradient-to-b from-[#001f3f] via-[#002b55] to-slate-950 flex items-center justify-center p-3.5 sm:p-4">
         <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-700"
+          className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-700/60"
         >
           {/* HEADER */}
-          <div className="bg-fgn-blue p-6 text-white text-center border-b-4 border-fgn-gold">
-            <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-3 border border-fgn-gold/30">
-              <Building2 size={32} className="text-fgn-gold" />
+          <div className="bg-fgn-blue p-5 sm:p-6 text-white text-center border-b-4 border-fgn-gold">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-3 border border-fgn-gold/30">
+              <Building2 size={28} className="text-fgn-gold sm:w-8 sm:h-8" />
             </div>
-            <h1 className="text-lg font-black tracking-tight uppercase">
+            <h1 className="text-base sm:text-lg font-black tracking-tight uppercase">
               Fiscalía General de la Nación
             </h1>
-            <p className="text-xs text-blue-200 uppercase font-semibold mt-1">
+            <p className="text-[11px] sm:text-xs text-blue-200 uppercase font-semibold mt-1">
               Policía Judicial • SICIJ
             </p>
           </div>
 
-          <div className="p-6 space-y-5">
+          <div className="p-4 sm:p-6 space-y-4 sm:space-y-5">
             <div className="text-center space-y-1">
-              <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
+              <h2 className="text-xs sm:text-sm font-bold text-slate-800 uppercase tracking-wider">
                 Sistema Integrado de Citaciones Judiciales
               </h2>
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[11px] text-slate-500 leading-relaxed">
                 Gestión automatizada de formatos FPJ-35, agenda judicial y extracción con IA
               </p>
             </div>
 
-            <div className="space-y-3 pt-2">
+            <div className="space-y-2.5 pt-1">
               <button
                 onClick={handleGuestLogin}
-                className="w-full py-3.5 px-4 bg-fgn-blue hover:bg-black text-white font-bold rounded-xl text-xs uppercase tracking-wider transition-all shadow-md flex items-center justify-between cursor-pointer border border-fgn-blue"
+                className="w-full py-3.5 px-4 bg-fgn-blue hover:bg-black text-white font-bold rounded-xl text-xs uppercase tracking-wider transition-all shadow-md flex items-center justify-between cursor-pointer border border-fgn-blue active:scale-98 min-h-[46px]"
               >
                 <div className="flex items-center gap-2.5">
-                  <Zap size={16} className="text-fgn-gold" />
+                  <Zap size={16} className="text-fgn-gold shrink-0" />
                   <span>Ingresar en Modo Local</span>
                 </div>
-                <span className="text-[9px] bg-fgn-gold/20 text-fgn-gold px-2 py-0.5 rounded font-black tracking-normal uppercase">
+                <span className="text-[9px] bg-fgn-gold/20 text-fgn-gold px-2 py-0.5 rounded font-black tracking-normal uppercase shrink-0">
                   Recomendado
                 </span>
               </button>
@@ -944,7 +977,7 @@ const App: React.FC = () => {
               <button
                 onClick={handleGoogleLogin}
                 disabled={isLoggingIn}
-                className="w-full py-3 px-4 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs uppercase tracking-wider transition-colors flex items-center justify-center gap-2 cursor-pointer border border-slate-300"
+                className="w-full py-3 px-4 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs uppercase tracking-wider transition-colors flex items-center justify-center gap-2 cursor-pointer border border-slate-300 active:scale-98 min-h-[44px]"
               >
                 {isLoggingIn ? (
                   <Loader2 size={16} className="animate-spin text-fgn-blue" />
@@ -955,7 +988,7 @@ const App: React.FC = () => {
               </button>
 
               <p className="text-[10px] text-slate-400 text-center leading-tight pt-1">
-                El <b>Modo Local</b> opera sin depender de ventanas emergentes externas, ideal para redes corporativas o de la Fiscalía.
+                El <b>Modo Local</b> opera sin depender de ventanas emergentes externas, ideal para dispositivos móviles y redes de la Fiscalía.
               </p>
             </div>
           </div>
@@ -1008,23 +1041,23 @@ const App: React.FC = () => {
 
       {/* INSTITUTIONAL HEADER */}
       <header className="bg-fgn-blue text-white border-b-4 border-fgn-gold sticky top-0 z-40 shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <div 
               onClick={() => setActiveMode(null)}
-              className="bg-white/10 p-2 rounded-lg border border-fgn-gold/30 cursor-pointer hover:bg-white/20 transition-all"
+              className="bg-white/10 p-1.5 sm:p-2 rounded-lg border border-fgn-gold/30 cursor-pointer hover:bg-white/20 transition-all shrink-0"
               title="Volver al Inicio"
             >
-              <Building2 size={20} className="text-fgn-gold" />
+              <Building2 size={18} className="text-fgn-gold sm:w-5 sm:h-5" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h1 
                 onClick={() => setActiveMode(null)}
-                className="text-xs sm:text-sm font-black uppercase tracking-wider cursor-pointer hover:text-fgn-gold transition-colors"
+                className="text-xs sm:text-sm font-black uppercase tracking-wider cursor-pointer hover:text-fgn-gold transition-colors truncate"
               >
                 Fiscalía General de la Nación
               </h1>
-              <p className="text-[9px] sm:text-[10px] text-blue-200 uppercase font-medium flex items-center gap-1.5">
+              <p className="text-[9px] sm:text-[10px] text-blue-200 uppercase font-medium flex items-center gap-1.5 truncate">
                 <span>Policía Judicial</span>
                 <span>•</span>
                 <span>SICIJ (FPJ-35)</span>
@@ -1033,29 +1066,29 @@ const App: React.FC = () => {
           </div>
 
           {/* TOP ACTIONS */}
-          <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
             <button
               onClick={() => setActiveMode(activeMode === 'calendar' ? null : 'calendar')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${activeMode === 'calendar' ? 'bg-fgn-gold text-slate-900 shadow-sm' : 'bg-white/10 hover:bg-white/20 text-white'}`}
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-98 ${activeMode === 'calendar' ? 'bg-fgn-gold text-slate-900 shadow-sm' : 'bg-white/10 hover:bg-white/20 text-white'}`}
               title="Ver Agenda y Calendario Judicial"
             >
               <CalendarRange size={14} />
-              <span className="hidden sm:inline">Agenda Judicial</span>
+              <span className="hidden md:inline">Agenda Judicial</span>
             </button>
 
-            <div className="h-6 w-px bg-white/20 mx-0.5 hidden sm:block" />
+            <div className="h-5 w-px bg-white/20 mx-0.5 hidden sm:block" />
 
             {/* INVESTIGATOR AVATAR & NAME */}
             <div 
               onClick={() => setIsSignatureModalOpen(true)}
-              className="flex items-center gap-2.5 bg-white/10 hover:bg-white/15 px-2.5 py-1 rounded-xl border border-white/15 cursor-pointer transition-all group"
+              className="flex items-center gap-2 bg-white/10 hover:bg-white/15 px-2 sm:px-2.5 py-1 rounded-xl border border-white/15 cursor-pointer transition-all group"
               title="Configurar perfil institucional y firma digital"
             >
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-fgn-gold to-amber-500 text-slate-950 font-black text-xs flex items-center justify-center shadow-xs border border-amber-300 font-mono tracking-wider shrink-0">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-gradient-to-br from-fgn-gold to-amber-500 text-slate-950 font-black text-[11px] sm:text-xs flex items-center justify-center shadow-xs border border-amber-300 font-mono tracking-wider shrink-0">
                 {investigatorInitials}
               </div>
-              <div className="text-left hidden sm:block">
-                <span className="text-xs font-bold text-white block uppercase leading-tight truncate max-w-[170px] group-hover:text-fgn-gold transition-colors">
+              <div className="text-left hidden lg:block">
+                <span className="text-xs font-bold text-white block uppercase leading-tight truncate max-w-[160px] group-hover:text-fgn-gold transition-colors">
                   {config.investigador || 'Servidor Judicial'}
                 </span>
                 <span className="text-[9px] text-blue-200 block uppercase font-mono leading-none mt-0.5">
@@ -1066,7 +1099,7 @@ const App: React.FC = () => {
 
             <button
               onClick={handleLogout}
-              className="p-2 hover:bg-red-600/80 rounded-xl text-white/90 hover:text-white transition-colors cursor-pointer"
+              className="p-1.5 sm:p-2 hover:bg-red-600/80 rounded-xl text-white/90 hover:text-white transition-colors cursor-pointer"
               title="Cerrar Sesión"
             >
               <LogOut size={16} />
@@ -1076,18 +1109,18 @@ const App: React.FC = () => {
       </header>
 
       {/* MAIN CONTAINER */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex-1 w-full space-y-6">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6 flex-1 w-full space-y-4 sm:space-y-6">
         
         {/* DASHBOARD HOME VIEW */}
         {activeMode === null && (
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="space-y-6"
+            className="space-y-4 sm:space-y-6"
           >
             {isManualFormOpen ? (
               <div className="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
-                <div className="bg-gradient-to-r from-fgn-blue to-slate-900 text-white px-6 py-4 flex flex-wrap items-center justify-between gap-3 border-b-2 border-fgn-gold">
+                <div className="bg-gradient-to-r from-fgn-blue to-slate-900 text-white px-4 sm:px-6 py-3.5 sm:py-4 flex flex-wrap items-center justify-between gap-3 border-b-2 border-fgn-gold">
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => setIsManualFormOpen(false)}
@@ -1098,9 +1131,9 @@ const App: React.FC = () => {
                     </button>
                     <div>
                       <h2 className="text-sm sm:text-base font-black uppercase tracking-tight text-white flex items-center gap-2">
-                        <FileText size={18} className="text-fgn-gold" /> Nueva Citación Judicial (Formato FPJ-35)
+                        <FileText size={18} className="text-fgn-gold" /> Nueva Citación Judicial (FPJ-35)
                       </h2>
-                      <p className="text-[11px] text-blue-200">
+                      <p className="text-[10px] sm:text-[11px] text-blue-200">
                         Diligencie la información requerida para expedir el documento oficial
                       </p>
                     </div>
@@ -1113,7 +1146,7 @@ const App: React.FC = () => {
                   </button>
                 </div>
 
-                <div className="p-6">
+                <div className="p-4 sm:p-6">
                   <CitationForm
                     config={config}
                     onSubmit={handleRegisterManualCitation}
@@ -1122,11 +1155,11 @@ const App: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="space-y-6">
+              <div className="space-y-4 sm:space-y-6">
                 {/* EXECUTIVE OPERATIONAL STATUS BANNER */}
-                <div className="bg-gradient-to-r from-[#002855] via-[#083366] to-[#0f4c81] text-white rounded-2xl p-6 shadow-md border border-fgn-gold/30">
+                <div className="bg-gradient-to-r from-[#002855] via-[#083366] to-[#0f4c81] text-white rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-md border border-fgn-gold/30">
                   <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[9px] font-black uppercase tracking-widest bg-fgn-gold text-slate-950 px-2.5 py-0.5 rounded-md shadow-2xs">
                           SICIJ • POLICÍA JUDICIAL
@@ -1135,10 +1168,10 @@ const App: React.FC = () => {
                           <ShieldCheck size={12} className="text-emerald-400" /> Sistema Operativo
                         </span>
                       </div>
-                      <h2 className="text-lg sm:text-xl font-black uppercase tracking-tight text-white">
+                      <h2 className="text-base sm:text-xl font-black uppercase tracking-tight text-white">
                         Centro de Control y Gestión de Citaciones
                       </h2>
-                      <p className="text-xs text-blue-200 flex items-center gap-2 flex-wrap">
+                      <p className="text-[11px] sm:text-xs text-blue-200 flex items-center gap-1.5 sm:gap-2 flex-wrap">
                         <span>Servidor: <strong className="text-white font-bold">{config.investigador}</strong></span>
                         {config.placa && config.placa.trim() && config.placa !== 'No asignada' && config.placa !== 'N/A' && (
                           <>
@@ -1151,17 +1184,17 @@ const App: React.FC = () => {
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-2.5 flex-wrap">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:items-center gap-2 sm:gap-2.5 w-full lg:w-auto pt-1 lg:pt-0">
                       <button
                         onClick={() => setIsManualFormOpen(true)}
-                        className="px-4 py-2.5 bg-fgn-gold hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider transition-all shadow-md flex items-center gap-2 cursor-pointer"
+                        className="w-full sm:w-auto px-4 py-3 sm:py-2.5 bg-fgn-gold hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98 min-h-[44px]"
                       >
                         <Plus size={16} />
                         <span>Generar Citación FPJ-35</span>
                       </button>
                       <button
                         onClick={() => setActiveMode('excel')}
-                        className="px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all border border-white/20 flex items-center gap-1.5 cursor-pointer"
+                        className="w-full sm:w-auto px-3.5 py-3 sm:py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all border border-white/20 flex items-center justify-center gap-1.5 cursor-pointer active:scale-98 min-h-[44px]"
                       >
                         <FileSpreadsheet size={15} className="text-emerald-400" />
                         <span>Matriz Excel</span>
@@ -1170,120 +1203,120 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 4 KPI METRIC CARDS */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* 4 KPI METRIC CARDS (2-COLS ON MOBILE, 4-COLS ON DESKTOP) */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
                   {/* PENDIENTES */}
                   <div
                     onClick={() => setActiveMode('pendientes')}
-                    className="bg-white border border-slate-200/80 p-5 rounded-2xl shadow-2xs hover:shadow-md hover:border-red-400 transition-all cursor-pointer group flex flex-col justify-between"
+                    className="bg-white border border-slate-200/80 p-3.5 sm:p-5 rounded-xl sm:rounded-2xl shadow-2xs hover:shadow-md hover:border-red-400 transition-all cursor-pointer group flex flex-col justify-between"
                   >
                     <div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-red-600 uppercase tracking-wider bg-red-50 px-2 py-0.5 rounded border border-red-100">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[9px] sm:text-[10px] font-black text-red-600 uppercase tracking-wider bg-red-50 px-1.5 sm:px-2 py-0.5 rounded border border-red-100 truncate">
                           Por Notificar
                         </span>
-                        <div className="p-2 bg-red-50 text-red-600 rounded-xl group-hover:scale-110 transition-transform">
-                          <ClipboardList size={18} />
+                        <div className="p-1.5 sm:p-2 bg-red-50 text-red-600 rounded-lg sm:rounded-xl group-hover:scale-110 transition-transform shrink-0">
+                          <ClipboardList size={16} className="sm:w-[18px] sm:h-[18px]" />
                         </div>
                       </div>
-                      <p className="text-3xl font-black text-slate-900 mt-3 font-mono">{personas.length}</p>
-                      <p className="text-xs font-bold text-slate-700 mt-1">Citaciones Pendientes</p>
+                      <p className="text-2xl sm:text-3xl font-black text-slate-900 mt-2 sm:mt-3 font-mono">{personas.length}</p>
+                      <p className="text-[11px] sm:text-xs font-bold text-slate-700 mt-0.5 sm:mt-1 truncate">Citaciones Pendientes</p>
                     </div>
-                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-red-600 font-bold">
-                      <span>Revisar bandeja</span>
-                      <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                    <div className="mt-3 sm:mt-4 pt-2.5 sm:pt-3 border-t border-slate-100 flex items-center justify-between text-[10px] sm:text-[11px] text-red-600 font-bold">
+                      <span className="truncate">Revisar bandeja</span>
+                      <ChevronRight size={13} className="group-hover:translate-x-1 transition-transform shrink-0" />
                     </div>
                   </div>
 
                   {/* CITADOS */}
                   <div
                     onClick={() => setActiveMode('citados')}
-                    className="bg-white border border-slate-200/80 p-5 rounded-2xl shadow-2xs hover:shadow-md hover:border-emerald-400 transition-all cursor-pointer group flex flex-col justify-between"
+                    className="bg-white border border-slate-200/80 p-3.5 sm:p-5 rounded-xl sm:rounded-2xl shadow-2xs hover:shadow-md hover:border-emerald-400 transition-all cursor-pointer group flex flex-col justify-between"
                   >
                     <div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wider bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[9px] sm:text-[10px] font-black text-emerald-700 uppercase tracking-wider bg-emerald-50 px-1.5 sm:px-2 py-0.5 rounded border border-emerald-100 truncate">
                           Diligenciadas
                         </span>
-                        <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl group-hover:scale-110 transition-transform">
-                          <CheckCircle2 size={18} />
+                        <div className="p-1.5 sm:p-2 bg-emerald-50 text-emerald-600 rounded-lg sm:rounded-xl group-hover:scale-110 transition-transform shrink-0">
+                          <CheckCircle2 size={16} className="sm:w-[18px] sm:h-[18px]" />
                         </div>
                       </div>
-                      <p className="text-3xl font-black text-slate-900 mt-3 font-mono">{citados.length}</p>
-                      <p className="text-xs font-bold text-slate-700 mt-1">Notificaciones Enviadas</p>
+                      <p className="text-2xl sm:text-3xl font-black text-slate-900 mt-2 sm:mt-3 font-mono">{citados.length}</p>
+                      <p className="text-[11px] sm:text-xs font-bold text-slate-700 mt-0.5 sm:mt-1 truncate">Notificaciones Enviadas</p>
                     </div>
-                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-emerald-700 font-bold">
-                      <span>Ver registros citados</span>
-                      <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                    <div className="mt-3 sm:mt-4 pt-2.5 sm:pt-3 border-t border-slate-100 flex items-center justify-between text-[10px] sm:text-[11px] text-emerald-700 font-bold">
+                      <span className="truncate">Ver citados</span>
+                      <ChevronRight size={13} className="group-hover:translate-x-1 transition-transform shrink-0" />
                     </div>
                   </div>
 
                   {/* AGENDA */}
                   <div
                     onClick={() => setActiveMode('calendar')}
-                    className="bg-white border border-slate-200/80 p-5 rounded-2xl shadow-2xs hover:shadow-md hover:border-blue-400 transition-all cursor-pointer group flex flex-col justify-between"
+                    className="bg-white border border-slate-200/80 p-3.5 sm:p-5 rounded-xl sm:rounded-2xl shadow-2xs hover:shadow-md hover:border-blue-400 transition-all cursor-pointer group flex flex-col justify-between"
                   >
                     <div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-fgn-blue uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[9px] sm:text-[10px] font-black text-fgn-blue uppercase tracking-wider bg-blue-50 px-1.5 sm:px-2 py-0.5 rounded border border-blue-100 truncate">
                           Programación
                         </span>
-                        <div className="p-2 bg-blue-50 text-fgn-blue rounded-xl group-hover:scale-110 transition-transform">
-                          <CalendarRange size={18} />
+                        <div className="p-1.5 sm:p-2 bg-blue-50 text-fgn-blue rounded-lg sm:rounded-xl group-hover:scale-110 transition-transform shrink-0">
+                          <CalendarRange size={16} className="sm:w-[18px] sm:h-[18px]" />
                         </div>
                       </div>
-                      <p className="text-3xl font-black text-slate-900 mt-3 font-mono">{historial.length}</p>
-                      <p className="text-xs font-bold text-slate-700 mt-1">Diligencias en Agenda</p>
+                      <p className="text-2xl sm:text-3xl font-black text-slate-900 mt-2 sm:mt-3 font-mono">{historial.length}</p>
+                      <p className="text-[11px] sm:text-xs font-bold text-slate-700 mt-0.5 sm:mt-1 truncate">Diligencias en Agenda</p>
                     </div>
-                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-fgn-blue font-bold">
-                      <span>Abrir calendario</span>
-                      <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                    <div className="mt-3 sm:mt-4 pt-2.5 sm:pt-3 border-t border-slate-100 flex items-center justify-between text-[10px] sm:text-[11px] text-fgn-blue font-bold">
+                      <span className="truncate">Abrir agenda</span>
+                      <ChevronRight size={13} className="group-hover:translate-x-1 transition-transform shrink-0" />
                     </div>
                   </div>
 
                   {/* CONFLICTOS DE HORARIO */}
                   <div
                     onClick={() => setActiveMode('calendar')}
-                    className={`border p-5 rounded-2xl shadow-2xs hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between ${conflictCount > 0 ? 'bg-red-50/70 border-red-300 hover:border-red-500' : 'bg-white border-slate-200/80 hover:border-fgn-blue'}`}
+                    className={`border p-3.5 sm:p-5 rounded-xl sm:rounded-2xl shadow-2xs hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between ${conflictCount > 0 ? 'bg-red-50/70 border-red-300 hover:border-red-500' : 'bg-white border-slate-200/80 hover:border-fgn-blue'}`}
                   >
                     <div>
-                      <div className="flex items-center justify-between">
-                        <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${conflictCount > 0 ? 'bg-red-600 text-white border-red-600 animate-pulse' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                          {conflictCount > 0 ? '¡Atención!' : 'Horarios'}
+                      <div className="flex items-center justify-between gap-1">
+                        <span className={`text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-1.5 sm:px-2 py-0.5 rounded border truncate ${conflictCount > 0 ? 'bg-red-600 text-white border-red-600 animate-pulse' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                          {conflictCount > 0 ? '¡Cruces!' : 'Horarios'}
                         </span>
-                        <div className={`p-2 rounded-xl group-hover:scale-110 transition-transform ${conflictCount > 0 ? 'bg-red-200 text-red-700' : 'bg-slate-100 text-slate-600'}`}>
-                          {conflictCount > 0 ? <AlertTriangle size={18} /> : <Clock size={18} />}
+                        <div className={`p-1.5 sm:p-2 rounded-lg sm:rounded-xl group-hover:scale-110 transition-transform shrink-0 ${conflictCount > 0 ? 'bg-red-200 text-red-700' : 'bg-slate-100 text-slate-600'}`}>
+                          {conflictCount > 0 ? <AlertTriangle size={16} className="sm:w-[18px] sm:h-[18px]" /> : <Clock size={16} className="sm:w-[18px] sm:h-[18px]" />}
                         </div>
                       </div>
-                      <p className={`text-3xl font-black mt-3 font-mono ${conflictCount > 0 ? 'text-red-700' : 'text-slate-900'}`}>
+                      <p className={`text-2xl sm:text-3xl font-black mt-2 sm:mt-3 font-mono ${conflictCount > 0 ? 'text-red-700' : 'text-slate-900'}`}>
                         {conflictCount > 0 ? `${conflictCount} Cruces` : '0 Cruces'}
                       </p>
-                      <p className={`text-xs font-bold mt-1 ${conflictCount > 0 ? 'text-red-900' : 'text-slate-700'}`}>
-                        {conflictCount > 0 ? 'Conflictos por resolver' : 'Agenda sin colisiones'}
+                      <p className={`text-[11px] sm:text-xs font-bold mt-0.5 sm:mt-1 truncate ${conflictCount > 0 ? 'text-red-900' : 'text-slate-700'}`}>
+                        {conflictCount > 0 ? 'Conflictos activos' : 'Sin colisiones'}
                       </p>
                     </div>
-                    <div className={`mt-4 pt-3 border-t flex items-center justify-between text-[11px] font-bold ${conflictCount > 0 ? 'border-red-200 text-red-700' : 'border-slate-100 text-slate-600'}`}>
-                      <span>{conflictCount > 0 ? 'Resolver en Agenda' : 'Ver horarios libres'}</span>
-                      <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                    <div className={`mt-3 sm:mt-4 pt-2.5 sm:pt-3 border-t flex items-center justify-between text-[10px] sm:text-[11px] font-bold ${conflictCount > 0 ? 'border-red-200 text-red-700' : 'border-slate-100 text-slate-600'}`}>
+                      <span className="truncate">{conflictCount > 0 ? 'Resolver cruces' : 'Ver horarios'}</span>
+                      <ChevronRight size={13} className="group-hover:translate-x-1 transition-transform shrink-0" />
                     </div>
                   </div>
                 </div>
 
                 {/* WORKSTATION 3-COLUMN SECTIONS */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-stretch">
                   
                   {/* COL 1: CENTRO DE GENERACIÓN FPJ-35 (5 COLS) */}
-                  <div className="lg:col-span-5 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-2xs space-y-5 flex flex-col justify-between">
-                    <div className="space-y-4">
+                  <div className="lg:col-span-5 bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-2xs space-y-4 sm:space-y-5 flex flex-col justify-between h-full">
+                    <div className="space-y-3.5 sm:space-y-4">
                       <div className="flex items-center gap-3">
-                        <div className="p-2.5 bg-blue-50 text-fgn-blue rounded-xl border border-blue-100">
-                          <FileText size={22} className="text-fgn-blue" />
+                        <div className="p-2 sm:p-2.5 bg-blue-50 text-fgn-blue rounded-xl border border-blue-100 shrink-0">
+                          <FileText size={20} className="sm:w-[22px] sm:h-[22px] text-fgn-blue" />
                         </div>
                         <div>
-                          <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                          <h3 className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-tight">
                             Emisión de Citaciones Judiciales
                           </h3>
-                          <p className="text-xs text-slate-500">
+                          <p className="text-[11px] sm:text-xs text-slate-500">
                             Formato oficial FPJ-35 según directrices de Policía Judicial
                           </p>
                         </div>
@@ -1292,32 +1325,32 @@ const App: React.FC = () => {
                       <div className="space-y-2.5 pt-1">
                         <button
                           onClick={() => setIsManualFormOpen(true)}
-                          className="w-full py-3.5 px-4 bg-fgn-blue hover:bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm flex items-center justify-between cursor-pointer group"
+                          className="w-full py-3.5 px-4 bg-fgn-blue hover:bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm flex items-center justify-between cursor-pointer group active:scale-98 min-h-[46px]"
                         >
                           <div className="flex items-center gap-2.5">
-                            <Plus size={16} className="text-fgn-gold" />
+                            <Plus size={16} className="text-fgn-gold shrink-0" />
                             <span>Generar Citación Individual</span>
                           </div>
-                          <ArrowRight size={15} className="text-blue-200 group-hover:translate-x-1 transition-transform" />
+                          <ArrowRight size={15} className="text-blue-200 group-hover:translate-x-1 transition-transform shrink-0" />
                         </button>
 
                         <button
                           onClick={() => setActiveMode('excel')}
-                          className="w-full py-3 px-4 bg-indigo-50/80 hover:bg-indigo-100 text-indigo-950 border border-indigo-200/80 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-between cursor-pointer group"
+                          className="w-full py-3 px-4 bg-indigo-50/80 hover:bg-indigo-100 text-indigo-950 border border-indigo-200/80 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-between cursor-pointer group active:scale-98 min-h-[44px]"
                         >
                           <div className="flex items-center gap-2.5">
-                            <FileSpreadsheet size={16} className="text-indigo-600" />
+                            <FileSpreadsheet size={16} className="text-indigo-600 shrink-0" />
                             <span>Cargar Matriz Masiva (Excel)</span>
                           </div>
-                          <span className="text-[10px] font-mono font-bold bg-indigo-200/80 text-indigo-900 px-2 py-0.5 rounded">
+                          <span className="text-[10px] font-mono font-bold bg-indigo-200/80 text-indigo-900 px-2 py-0.5 rounded shrink-0">
                             {excelRows.length} filas
                           </span>
                         </button>
                       </div>
 
                       {/* INSTITUTIONAL FEATURES */}
-                      <div className="bg-slate-50 rounded-xl p-4 border border-slate-200/60 space-y-2 text-xs">
-                        <p className="text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      <div className="bg-slate-50 rounded-xl p-3.5 sm:p-4 border border-slate-200/60 space-y-2 text-xs">
+                        <p className="text-[10px] sm:text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
                           Garantías del Sistema
                         </p>
                         <div className="space-y-1.5 text-slate-600 text-[11px]">
@@ -1342,7 +1375,7 @@ const App: React.FC = () => {
                     </div>
 
                     <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                      <span className="font-mono text-[11px]">Total acumulado: <strong>{historial.length}</strong></span>
+                      <span className="font-mono text-[11px]">Total: <strong>{historial.length}</strong></span>
                       <button
                         onClick={() => setActiveMode('historial')}
                         className="text-fgn-blue hover:text-black font-bold uppercase text-[10px] tracking-wider flex items-center gap-1 cursor-pointer"
@@ -1354,11 +1387,11 @@ const App: React.FC = () => {
                   </div>
 
                   {/* COL 2: PRÓXIMAS DILIGENCIAS & AGENDA (4 COLS) */}
-                  <div className="lg:col-span-4 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-2xs space-y-4 flex flex-col justify-between">
+                  <div className="lg:col-span-4 bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-2xs space-y-4 flex flex-col justify-between h-full">
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <div className="p-2 bg-amber-50 text-amber-700 rounded-xl border border-amber-200/60">
+                          <div className="p-2 bg-amber-50 text-amber-700 rounded-xl border border-amber-200/60 shrink-0">
                             <CalendarRange size={18} className="text-fgn-gold" />
                           </div>
                           <div>
@@ -1390,19 +1423,19 @@ const App: React.FC = () => {
                                   setSelectedCitation(cit);
                                   setIsCitationModalOpen(true);
                                 }}
-                                className={`p-3 rounded-xl border transition-all cursor-pointer hover:shadow-2xs ${hasConf ? 'bg-red-50/60 border-red-200 hover:border-red-400' : 'bg-slate-50/80 border-slate-200/70 hover:border-slate-300'}`}
+                                className={`p-2.5 sm:p-3 rounded-xl border transition-all cursor-pointer hover:shadow-2xs active:scale-99 ${hasConf ? 'bg-red-50/60 border-red-200 hover:border-red-400' : 'bg-slate-50/80 border-slate-200/70 hover:border-slate-300'}`}
                               >
-                                <div className="flex items-center justify-between text-xs">
-                                  <span className="font-bold text-slate-800 uppercase truncate max-w-[170px]">
+                                <div className="flex items-center justify-between text-xs gap-2">
+                                  <span className="font-bold text-slate-800 uppercase truncate">
                                     {cit.nombre}
                                   </span>
-                                  <span className="font-mono text-[10px] font-bold bg-white px-2 py-0.5 rounded border border-slate-200 text-fgn-blue">
+                                  <span className="font-mono text-[10px] font-bold bg-white px-2 py-0.5 rounded border border-slate-200 text-fgn-blue shrink-0">
                                     {cit.hora ? formatTimeAMPM(cit.hora) : 'Sin hora'}
                                   </span>
                                 </div>
-                                <div className="flex items-center justify-between text-[10px] text-slate-500 mt-1">
+                                <div className="flex items-center justify-between text-[10px] text-slate-500 mt-1 gap-2">
                                   <span>{formatDateES(cit.fecha || '')}</span>
-                                  <span className="truncate max-w-[130px] font-medium">{cit.fiscal}</span>
+                                  <span className="truncate max-w-[130px] font-medium text-right">{cit.fiscal}</span>
                                 </div>
                                 {hasConf && (
                                   <span className="inline-flex items-center gap-1 text-[9px] font-black text-red-700 mt-1 uppercase">
@@ -1414,8 +1447,8 @@ const App: React.FC = () => {
                           })}
                         </div>
                       ) : (
-                        <div className="p-6 text-center bg-slate-50 rounded-xl border border-slate-200/60 space-y-1">
-                          <Calendar size={24} className="mx-auto text-slate-300" />
+                        <div className="p-5 text-center bg-slate-50 rounded-xl border border-slate-200/60 space-y-1">
+                          <Calendar size={22} className="mx-auto text-slate-300" />
                           <p className="text-xs font-bold text-slate-600">Sin diligencias próximas</p>
                           <p className="text-[10px] text-slate-400">Genere nuevas citaciones para programar la agenda.</p>
                         </div>
@@ -1424,7 +1457,7 @@ const App: React.FC = () => {
 
                     <button
                       onClick={() => setActiveMode('calendar')}
-                      className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-slate-200/80"
+                      className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-slate-200/80 active:scale-98 min-h-[42px]"
                     >
                       <CalendarRange size={14} className="text-fgn-blue" />
                       <span>Abrir Agenda Completa</span>
@@ -1432,41 +1465,43 @@ const App: React.FC = () => {
                   </div>
 
                   {/* COL 3: FICHA DE POLICÍA JUDICIAL & CONFIGURACIÓN (3 COLS) */}
-                  <div className="lg:col-span-3 space-y-4">
+                  <div className="lg:col-span-3 flex flex-col justify-between gap-3 sm:gap-4 h-full">
                     {/* INVESTIGATOR OFFICIAL CARD */}
-                    <div className="bg-gradient-to-b from-fgn-blue to-slate-900 text-white p-5 rounded-2xl border border-fgn-gold/40 shadow-md space-y-3.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[9px] font-black text-fgn-gold uppercase tracking-widest bg-white/10 px-2 py-0.5 rounded border border-fgn-gold/30">
-                          Servidor Judicial
-                        </span>
-                      </div>
+                    <div className="bg-gradient-to-b from-fgn-blue to-slate-900 text-white p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-fgn-gold/40 shadow-md flex flex-col justify-between flex-1">
+                      <div className="space-y-2.5 sm:space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] font-black text-fgn-gold uppercase tracking-widest bg-white/10 px-2 py-0.5 rounded border border-fgn-gold/30">
+                            Servidor Judicial
+                          </span>
+                        </div>
 
-                      <div>
-                        <h4 className="text-xs sm:text-sm font-black uppercase text-white tracking-tight">
-                          {config.investigador}
-                        </h4>
-                        <p className="text-[11px] text-blue-200 font-medium">{config.grupoInvestigador}</p>
-                        {config.placa && config.placa.trim() && config.placa !== 'No asignada' && (
-                          <p className="text-[10px] text-blue-300 font-mono mt-0.5">
-                            Placa: {config.placa}
+                        <div>
+                          <h4 className="text-xs sm:text-sm font-black uppercase text-white tracking-tight">
+                            {config.investigador}
+                          </h4>
+                          <p className="text-[11px] text-blue-200 font-medium">{config.grupoInvestigador}</p>
+                          {config.placa && config.placa.trim() && config.placa !== 'No asignada' && (
+                            <p className="text-[10px] text-blue-300 font-mono mt-0.5">
+                              Placa: {config.placa}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="pt-2 border-t border-white/10 space-y-1.5 text-[10px] text-blue-200">
+                          <p className="flex items-center gap-1.5 truncate">
+                            <Phone size={12} className="text-fgn-gold shrink-0" />
+                            <span>{config.telefono}</span>
                           </p>
-                        )}
-                      </div>
-
-                      <div className="pt-2 border-t border-white/10 space-y-1.5 text-[10px] text-blue-200">
-                        <p className="flex items-center gap-1.5 truncate">
-                          <Phone size={12} className="text-fgn-gold shrink-0" />
-                          <span>{config.telefono}</span>
-                        </p>
-                        <p className="flex items-center gap-1.5 truncate">
-                          <MapPin size={12} className="text-fgn-gold shrink-0" />
-                          <span>{config.instalaciones}</span>
-                        </p>
+                          <p className="flex items-center gap-1.5 truncate">
+                            <MapPin size={12} className="text-fgn-gold shrink-0" />
+                            <span>{config.instalaciones}</span>
+                          </p>
+                        </div>
                       </div>
 
                       <button
                         onClick={() => setIsSignatureModalOpen(true)}
-                        className="w-full py-2.5 bg-white/10 hover:bg-white/20 border border-fgn-gold/40 text-fgn-gold rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                        className="mt-3 w-full py-2.5 bg-white/10 hover:bg-white/20 border border-fgn-gold/40 text-fgn-gold rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs active:scale-98 min-h-[42px]"
                       >
                         <PenTool size={13} />
                         <span>Perfil y Firma Digital</span>
@@ -1474,21 +1509,23 @@ const App: React.FC = () => {
                     </div>
 
                     {/* HISTORICAL ARCHIVE SHORTCUT */}
-                    <div className="bg-white border border-slate-200/80 p-4 rounded-2xl shadow-2xs space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                          Archivo Consolidado
-                        </span>
-                        <span className="text-xs font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
-                          {historial.length}
-                        </span>
+                    <div className="bg-white border border-slate-200/80 p-3.5 sm:p-4 rounded-xl sm:rounded-2xl shadow-2xs flex flex-col justify-between">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">
+                            Archivo Consolidado
+                          </span>
+                          <span className="text-xs font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
+                            {historial.length}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 leading-tight">
+                          Historial completo de citaciones expedidas y control de asistencia.
+                        </p>
                       </div>
-                      <p className="text-[10px] text-slate-500 leading-tight">
-                        Historial completo de citaciones expedidas y control de asistencia.
-                      </p>
                       <button
                         onClick={() => setActiveMode('historial')}
-                        className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-slate-200/60"
+                        className="mt-3 w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-slate-200/60 active:scale-98 min-h-[40px]"
                       >
                         <History size={13} />
                         <span>Ver Archivo</span>
@@ -1498,30 +1535,111 @@ const App: React.FC = () => {
 
                 </div>
 
-                {/* RECENT ACTIVITY TABLE */}
+                {/* RECENT ACTIVITY SECTION - RESPONSIVE FOR MOBILE AND DESKTOP */}
                 {recentCitations.length > 0 && (
-                  <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-2xs space-y-4">
+                  <div className="bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-2xs space-y-3 sm:space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
                       <div>
-                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
-                          <History size={16} className="text-fgn-blue" />
+                        <h3 className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                          <History size={16} className="text-fgn-blue shrink-0" />
                           <span>Últimas Citaciones Tramitadas</span>
                         </h3>
-                        <p className="text-xs text-slate-500">
+                        <p className="text-[11px] sm:text-xs text-slate-500">
                           Registro cronológico reciente en la plataforma SICIJ
                         </p>
                       </div>
 
                       <button
                         onClick={() => setActiveMode('historial')}
-                        className="text-xs font-bold text-fgn-blue hover:text-black uppercase tracking-wider flex items-center gap-1 cursor-pointer"
+                        className="text-xs font-bold text-fgn-blue hover:text-black uppercase tracking-wider flex items-center gap-1 cursor-pointer w-fit"
                       >
-                        <span>Ver todo el archivo ({historial.length})</span>
+                        <span>Ver archivo completo ({historial.length})</span>
                         <ArrowRight size={13} />
                       </button>
                     </div>
 
-                    <div className="overflow-x-auto">
+                    {/* MOBILE CARD VIEW (VISIBLE ON PHONES < 640px) */}
+                    <div className="block sm:hidden space-y-2.5">
+                      {recentCitations.map(cit => {
+                        const hasConf = conflictMap.has(cit.id) && (conflictMap.get(cit.id)?.length || 0) > 0;
+                        const isNotified = cit.estado === 'citado';
+
+                        return (
+                          <div 
+                            key={cit.id}
+                            className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/80 space-y-2"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <span className="font-black text-slate-900 uppercase block text-xs truncate">
+                                  {cit.nombre}
+                                </span>
+                                <span className="text-[10px] text-slate-500 block truncate">
+                                  {cit.motivo || cit.delito || 'Sin motivo especificado'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border ${isNotified ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                  {isNotified ? 'Citado' : 'Pendiente'}
+                                </span>
+                                {hasConf && (
+                                  <span className="text-[8px] font-black text-red-600 uppercase bg-red-100 px-1.5 py-0.5 rounded border border-red-200">
+                                    Cruce
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-600 bg-white p-2 rounded-lg border border-slate-100">
+                              <div>
+                                <span className="text-slate-400 block text-[9px] uppercase font-bold">Fecha / Hora</span>
+                                <span className="font-bold text-slate-800">{formatDateES(cit.fecha || '')}</span>
+                                <span className="font-mono text-fgn-blue ml-1 font-bold">{cit.hora ? formatTimeAMPM(cit.hora) : ''}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 block text-[9px] uppercase font-bold">Orden OPJ / Despacho</span>
+                                <span className="font-mono font-bold text-slate-700 block truncate">{cit.orden || '-'}</span>
+                                <span className="truncate block text-slate-500">{cit.fiscal || '-'}</span>
+                              </div>
+                            </div>
+
+                            {/* MOBILE ACTION BUTTONS */}
+                            <div className="grid grid-cols-3 gap-1.5 pt-1">
+                              <button
+                                onClick={() => {
+                                  setSelectedCitation(cit);
+                                  setIsCitationModalOpen(true);
+                                }}
+                                className="py-2 px-2 bg-white hover:bg-blue-50 text-fgn-blue border border-blue-200/80 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer active:scale-98"
+                              >
+                                <Eye size={13} />
+                                <span>Ver FPJ</span>
+                              </button>
+                              <button
+                                onClick={() => handleDownloadDocx(cit)}
+                                className="py-2 px-2 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer active:scale-98"
+                              >
+                                <FileDown size={13} />
+                                <span>Word</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingCitation(cit);
+                                  setIsEditModalOpen(true);
+                                }}
+                                className="py-2 px-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer active:scale-98"
+                              >
+                                <Pencil size={13} />
+                                <span>Editar</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* DESKTOP TABLE VIEW (TABLETS & DESKTOP >= 640px) */}
+                    <div className="hidden sm:block overflow-x-auto">
                       <table className="w-full text-left border-collapse">
                         <thead>
                           <tr className="border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider bg-slate-50/70">
@@ -1619,23 +1737,37 @@ const App: React.FC = () => {
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="space-y-6"
+            className="space-y-4 sm:space-y-6"
           >
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 sm:p-4 rounded-xl border border-slate-200/90 shadow-2xs">
               <button
                 onClick={() => setActiveMode(null)}
-                className="flex items-center gap-2 text-text-muted hover:text-fgn-blue font-bold uppercase text-[10px] tracking-widest bg-white px-4 py-2 rounded-lg border border-fgn-border shadow-sm transition-all cursor-pointer"
+                className="flex items-center gap-2 text-slate-700 hover:text-fgn-blue hover:bg-slate-50 font-bold uppercase text-[11px] sm:text-xs tracking-wider bg-white px-3.5 sm:px-4 py-2.5 rounded-lg border border-slate-300 shadow-2xs transition-all cursor-pointer w-fit shrink-0 active:scale-98"
+                title="Regresar al Centro de Control principal"
               >
-                <ArrowLeft size={14} /> Volver al Inicio
+                <ArrowLeft size={16} className="text-fgn-blue shrink-0" />
+                <span>Volver al Inicio</span>
               </button>
-              <h2 className="text-lg font-bold text-fgn-blue uppercase flex items-center gap-2">
-                <CalendarRange size={22} className="text-fgn-gold" /> Agenda Judicial y Detección de Conflictos
-              </h2>
+
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="p-1.5 sm:p-2 bg-blue-50 text-fgn-blue rounded-lg border border-blue-100 shrink-0">
+                  <CalendarRange size={18} className="text-fgn-gold sm:w-5 sm:h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-xs sm:text-sm md:text-base font-black text-fgn-blue uppercase tracking-tight truncate">
+                    Agenda Judicial y Conflictos
+                  </h2>
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 truncate hidden sm:block">
+                    Programación de diligencias, control de asistencia y resolución de cruces
+                  </p>
+                </div>
+              </div>
             </div>
 
             <JudicialCalendar
               citations={historial}
               config={config}
+              onBack={() => setActiveMode(null)}
               onViewCitation={(c) => {
                 setSelectedCitation(c);
                 setIsCitationModalOpen(true);
@@ -1666,9 +1798,11 @@ const App: React.FC = () => {
                     setActiveMode(null);
                     setSelectedIds([]);
                   }}
-                  className="flex items-center gap-2 text-text-muted hover:text-fgn-blue font-bold uppercase text-[10px] tracking-widest bg-white px-4 py-2 rounded-lg border border-fgn-border shadow-sm transition-all cursor-pointer"
+                  className="flex items-center gap-2 text-slate-700 hover:text-fgn-blue hover:bg-slate-50 font-bold uppercase text-[11px] sm:text-xs tracking-wider bg-white px-3.5 sm:px-4 py-2.5 rounded-lg border border-slate-300 shadow-2xs transition-all cursor-pointer w-fit shrink-0 active:scale-98"
+                  title="Regresar al Centro de Control principal"
                 >
-                  <ArrowLeft size={14} /> Volver al Inicio
+                  <ArrowLeft size={16} className="text-fgn-blue shrink-0" />
+                  <span>Volver al Inicio</span>
                 </button>
 
                 {selectedIds.length > 0 && (
@@ -1847,9 +1981,11 @@ const App: React.FC = () => {
                     setActiveMode(null);
                     setSelectedIds([]);
                   }}
-                  className="flex items-center gap-2 text-text-muted hover:text-fgn-blue font-bold uppercase text-[10px] tracking-widest bg-white px-4 py-2 rounded-lg border border-fgn-border shadow-sm transition-all cursor-pointer w-fit"
+                  className="flex items-center gap-2 text-slate-700 hover:text-fgn-blue hover:bg-slate-50 font-bold uppercase text-[11px] sm:text-xs tracking-wider bg-white px-3.5 sm:px-4 py-2.5 rounded-lg border border-slate-300 shadow-2xs transition-all cursor-pointer w-fit shrink-0 active:scale-98"
+                  title="Regresar al Centro de Control principal"
                 >
-                  <ArrowLeft size={14} /> Volver al Inicio
+                  <ArrowLeft size={16} className="text-fgn-blue shrink-0" />
+                  <span>Volver al Inicio</span>
                 </button>
 
                 {selectedIds.length > 0 && (
@@ -2022,9 +2158,11 @@ const App: React.FC = () => {
                     setActiveMode(null);
                     setSelectedIds([]);
                   }}
-                  className="flex items-center gap-2 text-text-muted hover:text-fgn-blue font-bold uppercase text-[10px] tracking-widest bg-white px-4 py-2 rounded-lg border border-fgn-border shadow-sm transition-all cursor-pointer w-fit"
+                  className="flex items-center gap-2 text-slate-700 hover:text-fgn-blue hover:bg-slate-50 font-bold uppercase text-[11px] sm:text-xs tracking-wider bg-white px-3.5 sm:px-4 py-2.5 rounded-lg border border-slate-300 shadow-2xs transition-all cursor-pointer w-fit shrink-0 active:scale-98"
+                  title="Regresar al Centro de Control principal"
                 >
-                  <ArrowLeft size={14} /> Volver al Inicio
+                  <ArrowLeft size={16} className="text-fgn-blue shrink-0" />
+                  <span>Volver al Inicio</span>
                 </button>
 
                 {selectedIds.length > 0 && (
@@ -2188,18 +2326,31 @@ const App: React.FC = () => {
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="space-y-6"
+            className="space-y-4 sm:space-y-6"
           >
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 sm:p-4 rounded-xl border border-slate-200/90 shadow-2xs">
               <button
                 onClick={() => setActiveMode(null)}
-                className="flex items-center gap-2 text-text-muted hover:text-fgn-blue font-bold uppercase text-[10px] tracking-widest bg-white px-4 py-2 rounded-lg border border-fgn-border shadow-sm transition-all cursor-pointer"
+                className="flex items-center gap-2 text-slate-700 hover:text-fgn-blue hover:bg-slate-50 font-bold uppercase text-[11px] sm:text-xs tracking-wider bg-white px-3.5 sm:px-4 py-2.5 rounded-lg border border-slate-300 shadow-2xs transition-all cursor-pointer w-fit shrink-0 active:scale-98"
+                title="Regresar al Centro de Control principal"
               >
-                <ArrowLeft size={14} /> Volver al Inicio
+                <ArrowLeft size={16} className="text-fgn-blue shrink-0" />
+                <span>Volver al Inicio</span>
               </button>
-              <h2 className="text-lg font-bold text-fgn-blue uppercase flex items-center gap-2">
-                <FileSpreadsheet size={22} className="text-emerald-600" /> Matriz de Insumo Masivo (Excel)
-              </h2>
+
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="p-1.5 sm:p-2 bg-emerald-50 text-emerald-700 rounded-lg border border-emerald-100 shrink-0">
+                  <FileSpreadsheet size={18} className="text-emerald-600 sm:w-5 sm:h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-xs sm:text-sm md:text-base font-black text-fgn-blue uppercase tracking-tight truncate">
+                    Matriz de Insumo Masivo (Excel)
+                  </h2>
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 truncate hidden sm:block">
+                    Carga masiva, validación de datos y expedición por lotes
+                  </p>
+                </div>
+              </div>
             </div>
 
             <ExcelMatrixView

@@ -44,6 +44,7 @@ interface JudicialCalendarProps {
   onMarkAttendance?: (id: string, status: 'asistio' | 'no_asistio' | null) => void;
   onDeleteCitation?: (id: string, name: string) => void;
   onUpdateCitation?: (updated: Citacion) => Promise<void> | void;
+  onBack?: () => void;
 }
 
 type CalendarViewMode = 'month' | 'week' | 'day';
@@ -56,7 +57,8 @@ export const JudicialCalendar: React.FC<JudicialCalendarProps> = ({
   onDownloadDocx,
   onMarkAttendance,
   onDeleteCitation,
-  onUpdateCitation
+  onUpdateCitation,
+  onBack
 }) => {
   const [viewMode, setViewMode] = useState<CalendarViewMode>('month');
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
@@ -298,6 +300,17 @@ export const JudicialCalendar: React.FC<JudicialCalendarProps> = ({
 
           {/* VIEW SWITCHER & DATE CONTROLS */}
           <div className="flex flex-wrap items-center gap-2">
+            {onBack && (
+              <button
+                onClick={onBack}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center gap-1.5 border border-slate-200"
+                title="Volver al Inicio"
+              >
+                <ChevronLeft size={16} className="text-fgn-blue" />
+                <span>Inicio</span>
+              </button>
+            )}
+
             <button
               onClick={handleGoToday}
               className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer"

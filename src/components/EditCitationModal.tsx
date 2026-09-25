@@ -183,6 +183,9 @@ export const EditCitationModal: React.FC<EditCitationModalProps> = ({
       const rawHora = citation.hora || citation.horaExpedicion || citation.hora_citacion || citation.time || '';
       const rawFecha = citation.fecha || citation.fechaExpedicion || citation.fecha_citacion || citation.date || '';
 
+      const rawMotivo = citation.motivo || 'Entrevista';
+      const cleanInitialMotivo = rawMotivo.includes(' - ') ? rawMotivo.split(' - ')[0].trim() : rawMotivo;
+
       setFormData({
         nombre: citation.nombre || '',
         identificacion: citation.identificacion || citation.cedula || '',
@@ -196,7 +199,7 @@ export const EditCitationModal: React.FC<EditCitationModalProps> = ({
         delito: citation.delito || '',
         fecha: normalizeToDateInput(rawFecha) || rawFecha,
         hora: normalizeToTimeInput(rawHora) || rawHora,
-        motivo: citation.motivo || 'Entrevista',
+        motivo: cleanInitialMotivo || 'Entrevista',
         requiereAbogado: citation.requiereAbogado || 'NO',
         observaciones: citation.observaciones || ''
       });
@@ -464,6 +467,8 @@ export const EditCitationModal: React.FC<EditCitationModalProps> = ({
                   >
                     <option value="Entrevista">Entrevista</option>
                     <option value="Interrogatorio">Interrogatorio</option>
+                    <option value="Declaración Jurada">Declaración Jurada</option>
+                    <option value="Ampliación de Denuncia">Ampliación de Denuncia</option>
                   </select>
                 </div>
                 <div className="md:col-span-4">
