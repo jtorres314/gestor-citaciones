@@ -222,8 +222,8 @@ function cleanWordXmlTags(xml: string): string {
   // 2. Unificar cualquier marcador { ... } que Word haya dividido entre varias etiquetas <w:t> / <w:r>
   xml = xml.replace(/\{([^}]*?)\}/g, (match) => {
     if (match.includes('<')) {
-      const textOnly = match.replace(/<[^>]+>/g, '');
-      return '<w:t>{' + textOnly.replace(/[{}]/g, '') + '}</w:t>';
+      const textOnly = match.replace(/<[^>]+>/g, '').replace(/[{}]/g, '');
+      return '{' + textOnly + '}';
     }
     return match;
   });
@@ -778,16 +778,19 @@ function prepareRawOfficialTemplate(zip: PizZip): PizZip {
           let r1 = rows[1];
           const cells = r1.match(/<w:tc[\s\S]*?<\/w:tc>/g);
           if (cells && cells.length === 35) {
-            let newR1 = r1;
-            for (let i = 14; i <= 34; i++) {
-              const digitIndex = i - 14;
-              const oldCell = cells[i];
-              const newCell = oldCell.replace(
-                /<\/w:pPr>[\s\S]*?<\/w:p>/,
-                `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:sz w:val="18"/><w:szCs w:val="16"/></w:rPr><w:t>{NUNC_${digitIndex}}</w:t></w:r></w:p>`
-              );
-              newR1 = newR1.replace(oldCell, newCell);
-            }
+            const newCells = cells.map((cell, i) => {
+              if (i >= 14 && i <= 34) {
+                const digitIndex = i - 14;
+                return cell.replace(
+                  /<\/w:pPr>[\s\S]*?<\/w:p>/,
+                  `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:sz w:val="18"/><w:szCs w:val="16"/></w:rPr><w:t>{NUNC_${digitIndex}}</w:t></w:r></w:p>`
+                );
+              }
+              return cell;
+            });
+            const trPrMatch = r1.match(/^<w:tr[^>]*>(?:<w:trPr>[\s\S]*?<\/w:trPr>)?/);
+            const trHeader = trPrMatch ? trPrMatch[0] : '<w:tr>';
+            const newR1 = trHeader + newCells.join('') + '</w:tr>';
             t0 = t0.replace(r1, newR1);
             xml = xml.replace(t0Match[0], t0);
           }
@@ -803,25 +806,32 @@ function prepareRawOfficialTemplate(zip: PizZip): PizZip {
           let r1 = rows[1];
           const cells = r1.match(/<w:tc[\s\S]*?<\/w:tc>/g);
           if (cells && cells.length === 13) {
-            let c1 = cells[1].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:sz w:val="18"/><w:szCs w:val="16"/></w:rPr><w:t>{DEPARTAMENTO}</w:t></w:r></w:p>`);
-            let c3 = cells[3].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:sz w:val="18"/><w:szCs w:val="16"/></w:rPr><w:t>{MUNICIPIO}</w:t></w:r></w:p>`);
-            let c5 = cells[5].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:sz w:val="16"/><w:szCs w:val="14"/></w:rPr><w:t>{FECHA_EXP_ANO}</w:t></w:r></w:p>`);
-            let c6 = cells[6].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:sz w:val="16"/><w:szCs w:val="14"/></w:rPr><w:t>{FECHA_EXP_MES}</w:t></w:r></w:p>`);
-            let c7 = cells[7].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:sz w:val="16"/><w:szCs w:val="14"/></w:rPr><w:t>{FECHA_EXP_DIA}</w:t></w:r></w:p>`);
-            let c9 = cells[9].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:sz w:val="16"/><w:szCs w:val="14"/></w:rPr><w:t>{HORA_EXP_H1}</w:t></w:r></w:p>`);
-            let c10 = cells[10].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:sz w:val="16"/><w:szCs w:val="14"/></w:rPr><w:t>{HORA_EXP_H2}</w:t></w:r></w:p>`);
-            let c11 = cells[11].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:sz w:val="16"/><w:szCs w:val="14"/></w:rPr><w:t>{HORA_EXP_M1}</w:t></w:r></w:p>`);
-            let c12 = cells[12].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:sz w:val="16"/><w:szCs w:val="14"/></w:rPr><w:t>{HORA_EXP_M2}</w:t></w:r></w:p>`);
+            const tagMap: Record<number, { tag: string; sz: string }> = {
+              1: { tag: '{DEPARTAMENTO}', sz: '18' },
+              3: { tag: '{MUNICIPIO}', sz: '18' },
+              5: { tag: '{FECHA_EXP_ANO}', sz: '16' },
+              6: { tag: '{FECHA_EXP_MES}', sz: '16' },
+              7: { tag: '{FECHA_EXP_DIA}', sz: '16' },
+              9: { tag: '{HORA_EXP_H1}', sz: '16' },
+              10: { tag: '{HORA_EXP_H2}', sz: '16' },
+              11: { tag: '{HORA_EXP_M1}', sz: '16' },
+              12: { tag: '{HORA_EXP_M2}', sz: '16' }
+            };
 
-            let newR1 = r1.replace(cells[1], c1)
-                          .replace(cells[3], c3)
-                          .replace(cells[5], c5)
-                          .replace(cells[6], c6)
-                          .replace(cells[7], c7)
-                          .replace(cells[9], c9)
-                          .replace(cells[10], c10)
-                          .replace(cells[11], c11)
-                          .replace(cells[12], c12);
+            const newCells = cells.map((cell, i) => {
+              if (tagMap[i]) {
+                const { tag, sz } = tagMap[i];
+                return cell.replace(
+                  /<\/w:pPr>[\s\S]*?<\/w:p>/,
+                  `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:sz w:val="${sz}"/><w:szCs w:val="14"/></w:rPr><w:t>${tag}</w:t></w:r></w:p>`
+                );
+              }
+              return cell;
+            });
+
+            const trPrMatch = r1.match(/^<w:tr[^>]*>(?:<w:trPr>[\s\S]*?<\/w:trPr>)?/);
+            const trHeader = trPrMatch ? trPrMatch[0] : '<w:tr>';
+            const newR1 = trHeader + newCells.join('') + '</w:tr>';
             xml = xml.replace(r1, newR1);
           }
         }
@@ -833,32 +843,28 @@ function prepareRawOfficialTemplate(zip: PizZip): PizZip {
         let t2 = table2Match[0];
         const rows = t2.match(/<w:tr[\s\S]*?<\/w:tr>/g);
         if (rows && rows.length >= 4) {
-          let r0 = rows[0];
-          const r0cells = r0.match(/<w:tc[\s\S]*?<\/w:tc>/g);
-          if (r0cells && r0cells.length >= 2) {
-            let newCell = r0cells[1].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:sz w:val="20"/><w:szCs w:val="18"/></w:rPr><w:t>{NOMBRE}</w:t></w:r></w:p>`);
-            t2 = t2.replace(r0, r0.replace(r0cells[1], newCell));
-          }
+          const replacements: { rowIndex: number; cellIndex: number; tag: string; sz: string; b?: boolean }[] = [
+            { rowIndex: 0, cellIndex: 1, tag: '{NOMBRE}', sz: '20', b: true },
+            { rowIndex: 1, cellIndex: 1, tag: '{DIRECCION}', sz: '18' },
+            { rowIndex: 2, cellIndex: 1, tag: '{CORREO}', sz: '18' },
+            { rowIndex: 3, cellIndex: 1, tag: '{CIUDAD_Y_TELEFONO}', sz: '18' },
+          ];
 
-          let r1 = rows[1];
-          const r1cells = r1.match(/<w:tc[\s\S]*?<\/w:tc>/g);
-          if (r1cells && r1cells.length >= 2) {
-            let newCell = r1cells[1].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:sz w:val="18"/><w:szCs w:val="16"/></w:rPr><w:t>{DIRECCION}</w:t></w:r></w:p>`);
-            t2 = t2.replace(r1, r1.replace(r1cells[1], newCell));
-          }
-
-          let r2 = rows[2];
-          const r2cells = r2.match(/<w:tc[\s\S]*?<\/w:tc>/g);
-          if (r2cells && r2cells.length >= 2) {
-            let newCell = r2cells[1].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:sz w:val="18"/><w:szCs w:val="16"/></w:rPr><w:t>{CORREO}</w:t></w:r></w:p>`);
-            t2 = t2.replace(r2, r2.replace(r2cells[1], newCell));
-          }
-
-          let r3 = rows[3];
-          const r3cells = r3.match(/<w:tc[\s\S]*?<\/w:tc>/g);
-          if (r3cells && r3cells.length >= 2) {
-            let newCell = r3cells[1].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:sz w:val="18"/><w:szCs w:val="16"/></w:rPr><w:t>{CIUDAD_Y_TELEFONO}</w:t></w:r></w:p>`);
-            t2 = t2.replace(r3, r3.replace(r3cells[1], newCell));
+          for (const rep of replacements) {
+            let r = rows[rep.rowIndex];
+            const cells = r.match(/<w:tc[\s\S]*?<\/w:tc>/g);
+            if (cells && cells.length > rep.cellIndex) {
+              const bTag = rep.b ? '<w:b/>' : '';
+              cells[rep.cellIndex] = cells[rep.cellIndex].replace(
+                /<\/w:pPr>[\s\S]*?<\/w:p>/,
+                `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/>${bTag}<w:sz w:val="${rep.sz}"/><w:szCs w:val="16"/></w:rPr><w:t>${rep.tag}</w:t></w:r></w:p>`
+              );
+              const trPrMatch = r.match(/^<w:tr[^>]*>(?:<w:trPr>[\s\S]*?<\/w:trPr>)?/);
+              const trHeader = trPrMatch ? trPrMatch[0] : '<w:tr>';
+              const newR = trHeader + cells.join('') + '</w:tr>';
+              t2 = t2.replace(r, newR);
+              rows[rep.rowIndex] = newR;
+            }
           }
 
           xml = xml.replace(table2Match[0], t2);
@@ -881,9 +887,11 @@ function prepareRawOfficialTemplate(zip: PizZip): PizZip {
         let r = t4Match[0];
         const cells = r.match(/<w:tc[\s\S]*?<\/w:tc>/g);
         if (cells && cells.length >= 5) {
-          let c2 = cells[2].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:sz w:val="22"/><w:szCs w:val="16"/></w:rPr><w:t>{REQUIERE_SI}</w:t></w:r></w:p>`);
-          let c4 = cells[4].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:sz w:val="22"/><w:szCs w:val="16"/></w:rPr><w:t>{REQUIERE_NO}</w:t></w:r></w:p>`);
-          let newR = r.replace(cells[2], c2).replace(cells[4], c4);
+          cells[2] = cells[2].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:sz w:val="22"/><w:szCs w:val="16"/></w:rPr><w:t>{REQUIERE_SI}</w:t></w:r></w:p>`);
+          cells[4] = cells[4].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:sz w:val="22"/><w:szCs w:val="16"/></w:rPr><w:t>{REQUIERE_NO}</w:t></w:r></w:p>`);
+          const trPrMatch = r.match(/^<w:tr[^>]*>(?:<w:trPr>[\s\S]*?<\/w:trPr>)?/);
+          const trHeader = trPrMatch ? trPrMatch[0] : '<w:tr>';
+          const newR = trHeader + cells.join('') + '</w:tr>';
           xml = xml.replace(r, newR);
         }
       }
@@ -897,8 +905,11 @@ function prepareRawOfficialTemplate(zip: PizZip): PizZip {
           let r1 = rows[1];
           const cells = r1.match(/<w:tc[\s\S]*?<\/w:tc>/g);
           if (cells && cells.length >= 1) {
-            let newCell = cells[0].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:sz w:val="18"/><w:szCs w:val="16"/></w:rPr><w:t>{OBSERVACIONES}</w:t></w:r></w:p>`);
-            t6 = t6.replace(r1, r1.replace(cells[0], newCell));
+            cells[0] = cells[0].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:sz w:val="18"/><w:szCs w:val="16"/></w:rPr><w:t>{OBSERVACIONES}</w:t></w:r></w:p>`);
+            const trPrMatch = r1.match(/^<w:tr[^>]*>(?:<w:trPr>[\s\S]*?<\/w:trPr>)?/);
+            const trHeader = trPrMatch ? trPrMatch[0] : '<w:tr>';
+            const newR1 = trHeader + cells.join('') + '</w:tr>';
+            t6 = t6.replace(r1, newR1);
             xml = xml.replace(t6Match[0], t6);
           }
         }
@@ -913,22 +924,26 @@ function prepareRawOfficialTemplate(zip: PizZip): PizZip {
           let r2 = rows[2];
           const r2cells = r2.match(/<w:tc[\s\S]*?<\/w:tc>/g);
           if (r2cells && r2cells.length >= 3) {
-            let c0 = r2cells[0].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:sz w:val="18"/><w:szCs w:val="16"/></w:rPr><w:t>{INVESTIGADOR}</w:t></w:r></w:p>`);
-            let c1 = r2cells[1].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:sz w:val="18"/><w:szCs w:val="16"/></w:rPr><w:t>{ENTIDAD_INVESTIGADOR}</w:t></w:r></w:p>`);
-            let c2 = r2cells[2].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:sz w:val="18"/><w:szCs w:val="16"/></w:rPr><w:t>{UNIDAD}</w:t></w:r></w:p>`);
-            t7 = t7.replace(r2, r2.replace(r2cells[0], c0).replace(r2cells[1], c1).replace(r2cells[2], c2));
+            r2cells[0] = r2cells[0].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:b/><w:sz w:val="18"/><w:szCs w:val="16"/></w:rPr><w:t>{INVESTIGADOR}</w:t></w:r></w:p>`);
+            r2cells[1] = r2cells[1].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:sz w:val="18"/><w:szCs w:val="16"/></w:rPr><w:t>{ENTIDAD_INVESTIGADOR}</w:t></w:r></w:p>`);
+            r2cells[2] = r2cells[2].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:sz w:val="18"/><w:szCs w:val="16"/></w:rPr><w:t>{UNIDAD}</w:t></w:r></w:p>`);
+            const trPrMatch2 = r2.match(/^<w:tr[^>]*>(?:<w:trPr>[\s\S]*?<\/w:trPr>)?/);
+            const trHeader2 = trPrMatch2 ? trPrMatch2[0] : '<w:tr>';
+            const newR2 = trHeader2 + r2cells.join('') + '</w:tr>';
+            t7 = t7.replace(r2, newR2);
           }
 
           let r4 = rows[4];
           const r4cells = r4.match(/<w:tc[\s\S]*?<\/w:tc>/g);
           if (r4cells && r4cells.length >= 1) {
-            let c0 = r4cells[0].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:sz w:val="18"/><w:szCs w:val="16"/></w:rPr><w:t>{CORREO_INVESTIGADOR}</w:t></w:r></w:p>`);
+            r4cells[0] = r4cells[0].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:sz w:val="18"/><w:szCs w:val="16"/></w:rPr><w:t>{CORREO_INVESTIGADOR}</w:t></w:r></w:p>`);
             if (r4cells.length >= 2 && !r4cells[1].includes('{FIRMA}') && !r4cells[1].includes('{firma}')) {
-              let c1 = r4cells[1].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:sz w:val="18"/><w:szCs w:val="16"/></w:rPr><w:t>{FIRMA}</w:t></w:r></w:p>`);
-              t7 = t7.replace(r4, r4.replace(r4cells[0], c0).replace(r4cells[1], c1));
-            } else {
-              t7 = t7.replace(r4, r4.replace(r4cells[0], c0));
+              r4cells[1] = r4cells[1].replace(/<\/w:pPr>[\s\S]*?<\/w:p>/, `</w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Tahoma" w:cs="Arial"/><w:sz w:val="18"/><w:szCs w:val="16"/></w:rPr><w:t>{FIRMA}</w:t></w:r></w:p>`);
             }
+            const trPrMatch4 = r4.match(/^<w:tr[^>]*>(?:<w:trPr>[\s\S]*?<\/w:trPr>)?/);
+            const trHeader4 = trPrMatch4 ? trPrMatch4[0] : '<w:tr>';
+            const newR4 = trHeader4 + r4cells.join('') + '</w:tr>';
+            t7 = t7.replace(r4, newR4);
           }
 
           xml = xml.replace(t7Match[0], t7);
@@ -952,9 +967,9 @@ export async function generateCitationFromTemplate(
     if (customTemplateBuffer) {
       content = customTemplateBuffer;
     } else {
-      const response = await fetch('/PLANTILLA CITACION.docx');
+      const response = await fetch('/PLANTILLA CITACION.docx', { cache: 'no-store' });
       if (!response.ok) {
-        throw new Error(`No se pudo cargar la plantilla base (${response.statusText})`);
+        throw new Error(`No se pudo cargar la plantilla '/PLANTILLA CITACION.docx' desde la carpeta public. Estado: ${response.status} ${response.statusText}`);
       }
       content = await response.arrayBuffer();
     }
@@ -1201,9 +1216,8 @@ export async function generateCitationFromTemplate(
 
     return out;
   } catch (error) {
-    console.error("Error al procesar plantilla DOCX con docxtemplater:", error);
-    // Intentar fallback sólo si la plantilla falla catastróficamente
-    return await generateFPJ35WordDocument(citation);
+    console.error("Error al procesar la plantilla /PLANTILLA CITACION.docx:", error);
+    throw error;
   }
 }
 
