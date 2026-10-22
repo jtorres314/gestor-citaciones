@@ -215,17 +215,27 @@ export function calculateConstrainedDimensions(
 }
 
 function cleanWordXmlTags(xml: string): string {
-  // 1. Eliminar etiquetas de corrección ortográfica de Word que parten las etiquetas
+  // 1. Eliminar etiquetas de corrección ortográfica o de revisión de Word
   xml = xml.replace(/<w:proofErr[^>]*\/>/g, '');
+  xml = xml.replace(/<w:noProof\/>/g, '');
 
-  // 2. Unificar etiquetas { ... } partidas entre diferentes elementos <w:t>
-  xml = xml.replace(/<w:t[^>]*>\{<\/w:t>([\s\S]*?)<w:t[^>]*>\}<\/w:t>/g, (_match, middle) => {
-    const tagName = middle.replace(/<[^>]+>/g, '').trim();
-    return '<w:t>{' + tagName + '}</w:t>';
+  // 2. Unificar cualquier marcador { ... } que Word haya dividido entre varias etiquetas <w:t> / <w:r>
+  xml = xml.replace(/\{([^}]*?)\}/g, (match) => {
+    if (match.includes('<')) {
+      const textOnly = match.replace(/<[^>]+>/g, '');
+      return '<w:t>{' + textOnly.replace(/[{}]/g, '') + '}</w:t>';
+    }
+    return match;
   });
 
-  xml = xml.replace(/\{([^{}<>]+)<\/w:t>[\s\S]*?<w:t[^>]*>([^{}<>]+)\}/g, (_match, p1, p2) => {
-    return '<w:t>{' + (p1 + p2).trim() + '}</w:t>';
+  // 3. Corregir automáticamente si existe duplicación accidental de NUNC_14 en la celda 16 (posición 16)
+  let nunc14Count = 0;
+  xml = xml.replace(/\{NUNC_14\}/g, (match) => {
+    nunc14Count++;
+    if (nunc14Count === 2) {
+      return '{NUNC_15}';
+    }
+    return match;
   });
 
   return xml;
@@ -1142,12 +1152,28 @@ export async function generateCitationFromTemplate(
       firma_investigador: sigInfo ? signaturePlaceholder : ''
     };
 
-    // Add individual NUNC digits for templates with box grids (0 to 20 and 1 to 21)
+    // Add individual NUNC digits for templates with box grids (0 to 20 for 0-based, and 1 to 21 for 1-based)
     for (let i = 0; i < 21; i++) {
-      templateData[`NUNC_${i}`] = nuncDigits[i] || '';
-      templateData[`nunc_${i}`] = nuncDigits[i] || '';
-      templateData[`NUNC_${i + 1}`] = nuncDigits[i] || '';
-      templateData[`nunc_${i + 1}`] = nuncDigits[i] || '';
+      const digit = nuncDigits[i] || '';
+      // Mapeo 0-based (p. ej. NUNC_0 a NUNC_20 - como en plantilla oficial FPJ-35)
+      templateData[`NUNC_${i}`] = digit;
+      templateData[`nunc_${i}`] = digit;
+
+      // Mapeo 1-based (p. ej. N1 a N21, NUNC1 a NUNC21, N_1 a N_21)
+      const pos1Based = i + 1;
+      const posPadded = pos1Based < 10 ? `0${pos1Based}` : `${pos1Based}`;
+
+      templateData[`N${pos1Based}`] = digit;
+      templateData[`n${pos1Based}`] = digit;
+      templateData[`N_${pos1Based}`] = digit;
+      templateData[`n_${pos1Based}`] = digit;
+      templateData[`NUNC${pos1Based}`] = digit;
+      templateData[`nunc${pos1Based}`] = digit;
+
+      templateData[`N${posPadded}`] = digit;
+      templateData[`n${posPadded}`] = digit;
+      templateData[`N_${posPadded}`] = digit;
+      templateData[`n_${posPadded}`] = digit;
     }
 
     doc.render(templateData);
